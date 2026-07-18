@@ -22,7 +22,10 @@ export const INVENTORY_TABS = [
   {
     id: 'natural',
     label: 'Natural',
-    items: ['GRASS', 'DIRT', 'STONE', 'SAND', 'WATER', 'LEAVES', 'WOOD', 'SAPLING', 'ANACHARIS', 'WHEAT'],
+    items: [
+      'GRASS', 'DIRT', 'STONE', 'SAND', 'WATER', 'LEAVES', 'WOOD', 'SAPLING',
+      'ANACHARIS', 'WHEAT', 'POPPY', 'DANDELION', 'BLUE_ORCHID', 'PINK_TULIP',
+    ],
   },
   {
     id: 'building',

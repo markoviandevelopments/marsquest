@@ -1506,6 +1506,73 @@ function tryAttackChicken() {
 }
 
 /**
+ * Plant a decorative flower on top of a grass block only.
+ * @param {string} flowerKey e.g. 'POPPY'
+ */
+function plantFlower(target, flowerKey) {
+  if (!target) return false;
+  const def = BlockTypes[flowerKey];
+  if (!def?.isFlower) return false;
+
+  const grassId = BlockTypes.GRASS.id;
+  const lookId = world.getBlock(target.x, target.y, target.z);
+
+  let px;
+  let py;
+  let pz;
+  // Aim at grass → plant on top
+  if (lookId === grassId) {
+    px = target.x | 0;
+    py = (target.y | 0) + 1;
+    pz = target.z | 0;
+  } else {
+    px = target.placeX | 0;
+    py = target.placeY | 0;
+    pz = target.placeZ | 0;
+  }
+
+  // If place cell is grass, shift up onto it
+  const placeId = world.getBlock(px, py, pz);
+  if (placeId === grassId) {
+    py += 1;
+  }
+
+  const below = world.getBlock(px, py - 1, pz);
+  if (below !== grassId) {
+    chat.system(`${def.name} can only be placed on grass`);
+    mouse.place = false;
+    return false;
+  }
+
+  const spaceId = world.getBlock(px, py, pz);
+  const spaceType = world.getBlockType(spaceId);
+  // Replace air or other non-solid plants/flowers in the cell
+  const spaceOk = spaceId === 0
+    || (spaceType && !spaceType.solid && !spaceType.liquid);
+  if (!spaceOk) {
+    chat.system('No room for a flower here');
+    mouse.place = false;
+    return false;
+  }
+
+  if (gameMode.isSurvival()) {
+    if (!gameMode.canPlace(flowerKey) || !gameMode.consumeItem(flowerKey, 1)) {
+      chat.system(`No ${def.name} in inventory`);
+      mouse.place = false;
+      return false;
+    }
+  }
+
+  mouse.place = false;
+  world.setBlock(px, py, pz, flowerKey);
+  network.sendPlace(px, py, pz, flowerKey);
+  world.updateChunks(player.getPosition().x, player.getPosition().z);
+  pushWorldSave(true);
+  refreshHotbarCounts();
+  return true;
+}
+
+/**
  * Plant wheat on grass (or dirt): crop sits in the air/space above the soil.
  * Grows to 2 blocks tall over time; each segment can be harvested for wheat.
  */
@@ -1816,6 +1883,11 @@ function placeBlock(target) {
   // Wheat: plant on grass/dirt
   if (selectedBlockType === 'WHEAT') {
     return plantWheat(target);
+  }
+
+  // Decorative flowers: grass only
+  if (BlockTypes[selectedBlockType]?.isFlower) {
+    return plantFlower(target, selectedBlockType);
   }
 
   const px = target.placeX;

@@ -4,7 +4,8 @@ A voxel sandbox built with **Three.js** and a small **WebSocket** multiplayer se
 
 ## Features
 
-- Fixed **100×100** chunked world (grass, dirt, stone, ores, trees, water)
+- Fixed **100×100** chunked world (grass, dirt, stone, ores, trees, water, wildflowers)
+- **Flowers** (poppy, dandelion, blue orchid, pink tulip) placeable on grass only
 - Toads and food spawn randomly across the whole map (not around the player)
 - **Mine** blocks with left click (bedrock is unbreakable)
 - **Place** blocks with right click (hotbar / scroll / number keys)

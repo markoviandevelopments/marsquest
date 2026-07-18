@@ -2,7 +2,14 @@
 import * as THREE from 'three';
 import * as BufferGeometryUtils from 'three/addons/utils/BufferGeometryUtils.js';
 import { BlockTypes, BlockIdToType, getBlockType, isSolid, isTransparent } from './blocks.js';
-import { getSolidMaterial, getTransparentMaterial, getWaterMaterial, getTileUV, tileForFace } from './textures.js';
+import {
+  getSolidMaterial,
+  getTransparentMaterial,
+  getWaterMaterial,
+  getPlantMaterial,
+  getTileUV,
+  tileForFace,
+} from './textures.js';
 
 const CHUNK_SIZE = 16;
 const RENDER_DISTANCE = 3;
@@ -55,6 +62,7 @@ class Chunk {
     this.mesh = null;
     this.transparentMesh = null;
     this.waterMesh = null;
+    this.plantMesh = null;
     this.dirty = true;
     this.generated = false;
   }
@@ -75,6 +83,11 @@ class Chunk {
       this.waterMesh.geometry.dispose();
       this.world.scene.remove(this.waterMesh);
       this.waterMesh = null;
+    }
+    if (this.plantMesh) {
+      this.plantMesh.geometry.dispose();
+      this.world.scene.remove(this.plantMesh);
+      this.plantMesh = null;
     }
   }
 
@@ -181,6 +194,26 @@ class Chunk {
         if (height < 10) {
           for (let y = height + 1; y <= 10; y++) {
             this.setWorldY(x, y, z, BlockTypes.WATER.id);
+          }
+        } else {
+          // Wildflowers on grass above the waterline (air only — skip tree trunks)
+          const above = this.getBlock(x, worldToLocalY(height + 1), z);
+          if (above === 0) {
+            const fn = this.noise2D(wx * 0.32 + 17, wz * 0.32 + 41);
+            if (fn > 0.74) {
+              const flowers = [
+                BlockTypes.POPPY?.id,
+                BlockTypes.DANDELION?.id,
+                BlockTypes.BLUE_ORCHID?.id,
+                BlockTypes.PINK_TULIP?.id,
+              ].filter((id) => id != null);
+              if (flowers.length) {
+                const pick = Math.floor(
+                  ((this.noise2D(wx * 0.91 + 3, wz * 0.91 + 9) + 1) * 0.5) * flowers.length
+                ) % flowers.length;
+                this.setWorldY(x, height + 1, z, flowers[pick]);
+              }
+            }
           }
         }
       }
@@ -473,10 +506,16 @@ class Chunk {
       this.world.scene.remove(this.waterMesh);
       this.waterMesh = null;
     }
+    if (this.plantMesh) {
+      this.plantMesh.geometry.dispose();
+      this.world.scene.remove(this.plantMesh);
+      this.plantMesh = null;
+    }
 
     const solidGeometries = [];
     const transparentGeometries = [];
     const waterGeometries = [];
+    const plantGeometries = [];
 
     const worldX = this.cx * CHUNK_SIZE;
     const worldZ = this.cz * CHUNK_SIZE;
@@ -525,6 +564,12 @@ class Chunk {
           const wx = worldX + x;
           const wy = localToWorldY(y); // mesh vertices use world Y
           const wz = worldZ + z;
+
+          // Flowers: two crossed planes (Minecraft-style) instead of a full cube
+          if (blockType.isFlower) {
+            this.addPlantCross(plantGeometries, wx, wy, wz, blockType);
+            continue;
+          }
 
           // Check 6 neighbors (local indices inside chunk)
           const neighbors = [
@@ -594,6 +639,80 @@ class Chunk {
         this.waterMesh.renderOrder = 1; // draw after opaque
         this.world.scene.add(this.waterMesh);
       }
+    }
+
+    if (plantGeometries.length > 0) {
+      const geometry = this.mergeGeometries(plantGeometries);
+      if (geometry) {
+        this.plantMesh = new THREE.Mesh(geometry, getPlantMaterial());
+        this.plantMesh.userData.chunk = this;
+        this.plantMesh.renderOrder = 2;
+        this.world.scene.add(this.plantMesh);
+      }
+    }
+  }
+
+  /**
+   * Two crossed vertical quads for flowers (X shape when viewed from above).
+   * Uses the block texture as a cutout sprite on both diagonals.
+   */
+  addPlantCross(plantGeos, x, y, z, blockType) {
+    const tileName = blockType.texture || 'missing';
+    const { u0, v0, u1, v1 } = getTileUV(tileName);
+    const shade = 1.0;
+    // Slight inset so edges don't z-fight with adjacent cubes
+    const inset = 0.05;
+    const planes = [
+      // diagonal from (0,0)-(1,1) in XZ
+      [
+        [inset, 0, inset],
+        [inset, 1, inset],
+        [1 - inset, 1, 1 - inset],
+        [1 - inset, 0, 1 - inset],
+      ],
+      // diagonal from (1,0)-(0,1) in XZ
+      [
+        [1 - inset, 0, inset],
+        [1 - inset, 1, inset],
+        [inset, 1, 1 - inset],
+        [inset, 0, 1 - inset],
+      ],
+    ];
+    const faceUVs = [
+      [u0, v0],
+      [u0, v1],
+      [u1, v1],
+      [u1, v0],
+    ];
+
+    for (const corners of planes) {
+      const geo = new THREE.BufferGeometry();
+      const vertices = [];
+      const colors = [];
+      const uvs = [];
+      const normals = [];
+      const indices = [];
+      // Approximate outward normal for lighting (horizontal)
+      const nx = corners[2][0] - corners[0][0];
+      const nz = corners[2][2] - corners[0][2];
+      const len = Math.hypot(nx, nz) || 1;
+      const nnx = -nz / len;
+      const nnz = nx / len;
+
+      for (let i = 0; i < 4; i++) {
+        const [ox, oy, oz] = corners[i];
+        vertices.push(x + ox, y + oy, z + oz);
+        colors.push(shade, shade, shade);
+        normals.push(nnx, 0, nnz);
+        uvs.push(faceUVs[i][0], faceUVs[i][1]);
+      }
+      indices.push(0, 1, 2, 0, 2, 3);
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geo.setIndex(indices);
+      plantGeos.push(geo);
     }
   }
 
@@ -1469,11 +1588,14 @@ export class World {
     for (const chunk of this.chunks.values()) {
       const far = Math.abs(chunk.cx - cx) > maxD || Math.abs(chunk.cz - cz) > maxD;
       if (far) {
-        if (chunk.mesh || chunk.transparentMesh || chunk.waterMesh) {
+        if (chunk.mesh || chunk.transparentMesh || chunk.waterMesh || chunk.plantMesh) {
           chunk.dispose();
           chunk.dirty = true; // remesh when player returns
         }
-      } else if (!chunk.mesh && !chunk.transparentMesh && !chunk.waterMesh && chunk.generated) {
+      } else if (
+        !chunk.mesh && !chunk.transparentMesh && !chunk.waterMesh && !chunk.plantMesh
+        && chunk.generated
+      ) {
         // Remesh if we disposed earlier and player walked back
         chunk.dirty = true;
         chunk.rebuildMesh();
@@ -1487,6 +1609,7 @@ export class World {
       if (chunk.mesh) meshes.push(chunk.mesh);
       if (chunk.transparentMesh) meshes.push(chunk.transparentMesh);
       if (chunk.waterMesh) meshes.push(chunk.waterMesh);
+      if (chunk.plantMesh) meshes.push(chunk.plantMesh);
     }
     return meshes;
   }

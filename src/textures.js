@@ -53,6 +53,10 @@ export const TILE_NAMES = [
   'coal',
   'wheat',
   'pretzel',
+  'poppy',
+  'dandelion',
+  'blue_orchid',
+  'pink_tulip',
   'missing',
 ];
 
@@ -781,8 +785,106 @@ const DRAWERS = {
       setPx(data, s, x, 14, rgb(180, 110, 40));
     }
   },
+  poppy: (d, s) => drawFlowerTile(d, s, {
+    petal: [220, 30, 40],
+    petalDark: [160, 10, 20],
+    center: [40, 30, 20],
+    stem: [40, 120, 45],
+    style: 'round',
+  }),
+  dandelion: (d, s) => drawFlowerTile(d, s, {
+    petal: [250, 220, 50],
+    petalDark: [210, 170, 20],
+    center: [255, 240, 120],
+    stem: [50, 130, 40],
+    style: 'burst',
+  }),
+  blue_orchid: (d, s) => drawFlowerTile(d, s, {
+    petal: [70, 130, 255],
+    petalDark: [40, 80, 190],
+    center: [200, 220, 255],
+    stem: [45, 110, 55],
+    style: 'orchid',
+  }),
+  pink_tulip: (d, s) => drawFlowerTile(d, s, {
+    petal: [255, 120, 170],
+    petalDark: [210, 60, 120],
+    center: [255, 200, 220],
+    stem: [35, 115, 50],
+    style: 'tulip',
+  }),
   missing: drawMissing,
 };
+
+/** Cross-plane flower sprite (transparent background, stem + bloom). */
+function drawFlowerTile(d, s, { petal, petalDark, center, stem, style }) {
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) setPx(d, s, x, y, rgb(0, 0, 0, 0));
+  }
+  // stem
+  for (let y = 1; y < 9; y++) {
+    setPx(d, s, 7, y, rgb(stem[0], stem[1], stem[2]));
+    setPx(d, s, 8, y, rgb(stem[0] + 15, stem[1] + 20, stem[2] + 10));
+  }
+  // small leaf
+  setPx(d, s, 6, 4, rgb(stem[0], stem[1] + 10, stem[2]));
+  setPx(d, s, 5, 5, rgb(stem[0], stem[1] + 10, stem[2]));
+  setPx(d, s, 9, 5, rgb(stem[0] + 10, stem[1] + 15, stem[2]));
+
+  const put = (x, y, col, shade = 0) => {
+    if (x < 0 || x >= s || y < 0 || y >= s) return;
+    setPx(d, s, x, y, rgb(col[0] + shade, col[1] + shade, col[2] + shade));
+  };
+
+  if (style === 'round' || style === 'burst') {
+    // circular bloom around (7.5, 11)
+    for (let y = 8; y < 15; y++) {
+      for (let x = 4; x < 12; x++) {
+        const dx = x - 7.5;
+        const dy = y - 11;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (style === 'burst') {
+          const ang = Math.atan2(dy, dx);
+          const petalR = 2.2 + 0.9 * Math.abs(Math.cos(ang * 4));
+          if (dist < petalR) {
+            put(x, y, dist < 1.1 ? center : (dist < 1.6 ? petal : petalDark));
+          }
+        } else {
+          if (dist < 3.1) {
+            put(x, y, dist < 1.0 ? center : (dist < 2.2 ? petal : petalDark), (hash2(x, y, 300) - 0.5) * 20);
+          }
+        }
+      }
+    }
+  } else if (style === 'orchid') {
+    // elongated petals
+    const petals = [
+      [7, 13], [8, 13], [6, 12], [9, 12], [5, 11], [10, 11],
+      [7, 10], [8, 10], [6, 10], [9, 10], [7, 14], [8, 14],
+      [4, 12], [11, 12], [7, 9], [8, 9],
+    ];
+    for (const [x, y] of petals) put(x, y, petal, (hash2(x, y, 301) - 0.5) * 15);
+    put(7, 11, center);
+    put(8, 11, center);
+    put(7, 12, petalDark);
+    put(8, 12, petalDark);
+  } else if (style === 'tulip') {
+    // cup shape
+    for (let y = 9; y < 15; y++) {
+      const half = y < 12 ? (y - 8) : (15 - y + 1);
+      for (let dx = -half; dx <= half; dx++) {
+        const x = 7 + dx + (dx >= 0 ? 0 : 0);
+        const col = y >= 13 ? petalDark : petal;
+        put(Math.round(7.5 + dx - 0.5), y, col, (hash2(x, y, 302) - 0.5) * 12);
+      }
+    }
+    put(7, 11, center);
+    put(8, 11, center);
+    // stem notch
+    put(7, 9, stem);
+    put(8, 9, stem);
+  }
+}
 
 /**
  * Build (once) and return the shared atlas texture.
@@ -892,6 +994,7 @@ export function tileForFace(blockType, ny, nx = 0, nz = 0) {
 let solidMat = null;
 let transparentMat = null;
 let waterMat = null;
+let plantMat = null;
 
 export function getSolidMaterial() {
   if (!solidMat) {
@@ -917,6 +1020,21 @@ export function getTransparentMaterial() {
     });
   }
   return transparentMat;
+}
+
+/** Cutout double-sided material for crossed flower/plant quads */
+export function getPlantMaterial() {
+  if (!plantMat) {
+    plantMat = new THREE.MeshLambertMaterial({
+      map: getAtlasTexture(),
+      vertexColors: true,
+      transparent: true,
+      alphaTest: 0.35,
+      side: THREE.DoubleSide,
+      depthWrite: true,
+    });
+  }
+  return plantMat;
 }
 
 /** Dedicated water material — more transparent, no depth write (reads clearer underwater) */
