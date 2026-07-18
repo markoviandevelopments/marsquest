@@ -678,11 +678,14 @@ class Chunk {
         [inset, 0, 1 - inset],
       ],
     ];
+    // Flower tile art is drawn with stem at low image-Y (top of canvas) and
+    // bloom at high image-Y. CanvasTexture flipY maps image-top → high V, so
+    // plant quads must invert V vs cube sides: mesh bottom uses v1, top uses v0.
     const faceUVs = [
-      [u0, v0],
-      [u0, v1],
-      [u1, v1],
-      [u1, v0],
+      [u0, v1], // bottom
+      [u0, v0], // top
+      [u1, v0], // top
+      [u1, v1], // bottom
     ];
 
     for (const corners of planes) {
