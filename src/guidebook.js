@@ -12,7 +12,8 @@ export const GUIDE_SECTIONS = [
       <p><b>Wheat</b> plants on grass (or dirt) and grows to two blocks tall. Break either stalk to collect wheat. Craft <b>3 Wheat → 1 Pretzel</b> and eat with <b>C</b>.</p>
       <p><b>Flowers</b> — <b>Poppy</b>, <b>Dandelion</b>, <b>Blue Orchid</b>, and <b>Pink Tulip</b> — place only on <b>grass</b>. They also grow wild on the surface. Break to collect.</p>
       <p><b>Pear Gouramis</b> (male &amp; female) swim in water and keep a steady school of about 20.</p>
-      <p><b>Mars Portal</b> (right-click) drops you far below Earth (y≈−200). Explore dust plains, polar ice, magma craters, basalt pillars, crystal spikes, meteor impacts, and ruined habitats. The <b>Earth Portal</b> shrine is at map center.</p>
+      <p><b>Mars Portal</b> (right-click) drops you far below Earth (y≈−200). Explore several biomes: <b>dust plains</b>, <b>polar ice</b>, <b>volcanic basalt</b>, <b>magma craters</b>, <b>crystal fields</b>, <b>mesas</b>, and moist <b>carnivorous gardens</b>. The <b>Earth Portal</b> shrine is at map center. Southeast of center lies the elaborate colony town <b>Olympus Reach</b>.</p>
+      <p><b>Carnivorous plants</b> (venus flytraps, sundews, pitcher plants) grow oversized in garden basins. Walking into one is <b>sticky</b> — you move slowly and, in Survival, lose hearts and cheese/hunger until you escape. Harvest by mining while close and <b>not stuck</b> inside.</p>
       <p><b>Mars fauna:</b> Rock Rovers, Dust Hoppers, Crystal Crawlers — punch them for rust ore, dust, or crystals. Earth toads/chickens never go to Mars.</p>
       <p><b>T</b> opens chat. <b>Esc</b> opens this pause menu. Scroll or press <b>1–9</b> to change blocks.</p>
       <p>The world is a fixed <b>100×100</b> map. Digs, builds, toads, and time of day are saved on the server.</p>
@@ -43,6 +44,7 @@ export const GUIDE_SECTIONS = [
         <li><b>Oak Leaves</b> — tree canopy. Decay if more than 4 blocks from any oak log. Breaking leaves may drop an <b>Oak Sapling</b>.</li>
         <li><b>Oak Sapling</b> — place on dirt/grass to grow a full oak tree immediately.</li>
         <li><b>Flowers</b> — Poppy, Dandelion, Blue Orchid, Pink Tulip. Place only on grass; crossed-plant mesh. Collect by mining.</li>
+        <li><b>Mars carnivores</b> — Venus Flytrap, Round/Thread/Cape Sundew, Pitcher Plant, Marsh Pitcher. Oversized sticky plants; mine from outside when free.</li>
         <li><b>Glass</b> — transparent building block.</li>
         <li><b>Water</b> — placeable liquid (not solid).</li>
         <li><b>Torch</b> — lights the night. Custom mesh + glow.</li>

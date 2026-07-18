@@ -24,6 +24,8 @@ export class Player {
     this.velocity = new THREE.Vector3(0, 0, 0);
     this.onGround = false;
     this.inWater = false;
+    /** 1 = free; <1 when caught in sticky carnivorous plants */
+    this.stickyMult = 1;
 
     this._tmp = new THREE.Vector3();
     this.syncCamera();
@@ -114,6 +116,9 @@ export class Player {
       move.normalize();
       let speed = WALK_SPEED * (keys.sprint ? SPRINT_MULT : 1);
       if (this.inWater) speed *= SWIM_SPEED_MULT;
+      // Sticky plants slow movement but still allow escape
+      const sticky = Number.isFinite(this.stickyMult) ? this.stickyMult : 1;
+      speed *= Math.max(0.22, Math.min(1, sticky));
       this.velocity.x = move.x * speed;
       this.velocity.z = move.z * speed;
     } else {
@@ -121,14 +126,15 @@ export class Player {
       this.velocity.z = 0;
     }
 
-    // Jump / swim
+    // Jump / swim (sticky plants also shorten jumps)
     if (keys.jump) {
       if (this.inWater) {
         // Hold space to swim up continuously (not only when "on ground")
         this.velocity.y = Math.min(SWIM_MAX_UP, Math.max(this.velocity.y, SWIM_UP_SPEED));
         this.onGround = false;
       } else if (this.onGround) {
-        this.velocity.y = JUMP_SPEED;
+        const sticky = Number.isFinite(this.stickyMult) ? this.stickyMult : 1;
+        this.velocity.y = JUMP_SPEED * Math.max(0.45, Math.min(1, sticky));
         this.onGround = false;
       }
     }

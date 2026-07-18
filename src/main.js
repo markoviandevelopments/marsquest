@@ -168,6 +168,12 @@ let wasOnGround = true;
 /** Min seconds between sapling plants (prevents hold-RMB consuming many) */
 const SAPLING_PLACE_COOLDOWN = 1.0;
 let saplingCooldown = 0;
+/** Carnivorous plant sticky state */
+let carnivoreStuck = false;
+let carnivoreDrainTimer = 0;
+let carnivoreWarnCooldown = 0;
+const CARNIVORE_DRAIN_INTERVAL = 1.15; // seconds between heart/cheese ticks
+const CARNIVORE_MINE_MAX_DIST = 3.4;
 
 const modeBadgeEl = document.getElementById('mode-badge');
 const heartsEl = document.getElementById('hearts');
@@ -1425,10 +1431,111 @@ function getTargetBlock() {
   return world.raycast(origin, direction, 6);
 }
 
+/**
+ * Sample nearby blocks for carnivorous plant sticky volume.
+ * Plants are non-solid (walk-through) but slow + drain when the player is inside.
+ * @returns {{ stuck: boolean, name?: string }}
+ */
+function sampleCarnivoreSticky(px, py, pz) {
+  const samples = [
+    [px, py + 0.2, pz],
+    [px, py + 0.9, pz],
+    [px, py + 1.5, pz],
+    [px + 0.25, py + 0.5, pz],
+    [px - 0.25, py + 0.5, pz],
+    [px, py + 0.5, pz + 0.25],
+    [px, py + 0.5, pz - 0.25],
+  ];
+  for (const [sx, sy, sz] of samples) {
+    // Check the cell and neighbors — oversized plants have stickyRadius
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = 0; dy <= 2; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const bx = Math.floor(sx) + dx;
+          const by = Math.floor(sy) + dy;
+          const bz = Math.floor(sz) + dz;
+          const id = world.getBlock(bx, by, bz);
+          const type = world.getBlockType(id);
+          if (!type?.isCarnivorousPlant) continue;
+          const cx = bx + 0.5;
+          const cy = by;
+          const cz = bz + 0.5;
+          const r = type.stickyRadius ?? 0.9;
+          const h = type.stickyHeight ?? type.plantHeight ?? 2;
+          const distXZ = Math.hypot(px - cx, pz - cz);
+          if (distXZ <= r && py + 0.15 < cy + h && py + 1.6 > cy) {
+            return { stuck: true, name: type.name };
+          }
+        }
+      }
+    }
+  }
+  return { stuck: false };
+}
+
+function updateCarnivoreSticky(dt) {
+  const p = player.getPosition();
+  const hit = sampleCarnivoreSticky(p.x, p.y, p.z);
+  carnivoreStuck = hit.stuck;
+  player.stickyMult = hit.stuck ? 0.38 : 1;
+
+  if (carnivoreWarnCooldown > 0) carnivoreWarnCooldown -= dt;
+
+  if (!hit.stuck) {
+    carnivoreDrainTimer = 0;
+    return;
+  }
+
+  // Brief notice when first stuck
+  if (carnivoreWarnCooldown <= 0 && carnivoreDrainTimer === 0) {
+    chat.system(`Stuck in a ${hit.name || 'carnivorous plant'}! Move carefully to escape…`);
+    carnivoreWarnCooldown = 4;
+  }
+
+  // Creative: still sticky, but no damage
+  if (!gameMode.isSurvival() || gameMode.dead) {
+    carnivoreDrainTimer = 0;
+    return;
+  }
+
+  carnivoreDrainTimer += dt;
+  if (carnivoreDrainTimer >= CARNIVORE_DRAIN_INTERVAL) {
+    carnivoreDrainTimer = 0;
+    const res = gameMode.applyCarnivoreDrain();
+    if (res.ateCheese) {
+      chat.system('The plant dissolves a cheese wedge!');
+    } else if (res.hungerLost) {
+      chat.system('The sticky plant saps your hunger!');
+    } else if (res.damaged) {
+      chat.system('The plant burns a heart!');
+    }
+    refreshHotbarCounts();
+  }
+}
+
 function breakBlock(target) {
   if (!target) return false;
   if (gameMode.dead) return false;
   if (!world.canBreak(target.x, target.y, target.z)) return false;
+
+  // Carnivorous flowers: only if close and not currently stuck inside one
+  const targetType = target.blockType || world.getBlockType(target.blockId);
+  if (targetType?.isCarnivorousPlant) {
+    if (carnivoreStuck) {
+      chat.system("You're stuck in the plant — escape before harvesting!");
+      return false;
+    }
+    const eye = camera.position;
+    const dist = Math.hypot(
+      eye.x - (target.x + 0.5),
+      eye.y - (target.y + 0.5),
+      eye.z - (target.z + 0.5)
+    );
+    if (dist > CARNIVORE_MINE_MAX_DIST) {
+      chat.system('Too far — get closer (without walking into it) to harvest.');
+      return false;
+    }
+  }
 
   const dropKey = dropNameFromBlockId(target.blockId);
   const wasLeaves = dropKey === 'LEAVES';
@@ -1507,6 +1614,7 @@ function tryAttackChicken() {
 
 /**
  * Plant a decorative flower on top of a grass block only.
+ * Carnivorous Mars plants plant on Mars dust / rock / basalt instead.
  * @param {string} flowerKey e.g. 'POPPY'
  */
 function plantFlower(target, flowerKey) {
@@ -1515,13 +1623,21 @@ function plantFlower(target, flowerKey) {
   if (!def?.isFlower) return false;
 
   const grassId = BlockTypes.GRASS.id;
+  const marsSoils = new Set([
+    BlockTypes.MARS_DUST?.id,
+    BlockTypes.MARS_ROCK?.id,
+    BlockTypes.MARS_BASALT?.id,
+    BlockTypes.MARS_BRICK?.id,
+  ].filter((id) => id != null));
   const lookId = world.getBlock(target.x, target.y, target.z);
+  const isCarnivore = !!def.isCarnivorousPlant;
+  const soilOk = (id) => (isCarnivore ? marsSoils.has(id) : id === grassId);
 
   let px;
   let py;
   let pz;
-  // Aim at grass → plant on top
-  if (lookId === grassId) {
+  // Aim at soil → plant on top
+  if (soilOk(lookId)) {
     px = target.x | 0;
     py = (target.y | 0) + 1;
     pz = target.z | 0;
@@ -1531,15 +1647,19 @@ function plantFlower(target, flowerKey) {
     pz = target.placeZ | 0;
   }
 
-  // If place cell is grass, shift up onto it
+  // If place cell is soil, shift up onto it
   const placeId = world.getBlock(px, py, pz);
-  if (placeId === grassId) {
+  if (soilOk(placeId)) {
     py += 1;
   }
 
   const below = world.getBlock(px, py - 1, pz);
-  if (below !== grassId) {
-    chat.system(`${def.name} can only be placed on grass`);
+  if (!soilOk(below)) {
+    chat.system(
+      isCarnivore
+        ? `${def.name} needs Mars dust, rock, basalt, or brick under it`
+        : `${def.name} can only be placed on grass`
+    );
     mouse.place = false;
     return false;
   }
@@ -2106,6 +2226,15 @@ function animate(time) {
 
   // Survival vitals
   gameMode.update(delta, ppos.y);
+
+  // Mars carnivorous plants: sticky slow + heart/cheese drain
+  if (isOnMars(ppos.y)) {
+    updateCarnivoreSticky(delta);
+  } else {
+    carnivoreStuck = false;
+    carnivoreDrainTimer = 0;
+    player.stickyMult = 1;
+  }
 
   // Oak leaf decay (orphan leaves far from logs) — Earth layer
   leafDecayTimer += delta;

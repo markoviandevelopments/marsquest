@@ -173,6 +173,33 @@ export class GameMode {
     if (this.health <= 0) this.triggerGameOver('You ran out of hearts!');
   }
 
+  /**
+   * Carnivorous plant tick: drain cheese food if held, else hunger, plus heart damage.
+   * @returns {{ damaged: boolean, ateCheese: boolean, hungerLost: boolean }}
+   */
+  applyCarnivoreDrain() {
+    if (!this.isSurvival() || this.dead) {
+      return { damaged: false, ateCheese: false, hungerLost: false };
+    }
+    let ateCheese = false;
+    let hungerLost = false;
+    // Prefer dissolving inventory cheese, then hunger wedges
+    if (this.getCount(FOOD_ITEM) > 0) {
+      this.consumeItem(FOOD_ITEM, 1);
+      ateCheese = true;
+    } else if (this.hunger > 0) {
+      this.hunger = Math.max(0, this.hunger - 1);
+      hungerLost = true;
+      this.notify();
+      if (this.hunger <= 0) {
+        this.triggerGameOver('A carnivorous plant dissolved your last supplies!');
+        return { damaged: true, ateCheese, hungerLost };
+      }
+    }
+    this.takeDamage(1);
+    return { damaged: true, ateCheese, hungerLost };
+  }
+
   update(dt, playerY) {
     if (!this.isSurvival() || this.dead) {
       this._fallStartY = playerY;

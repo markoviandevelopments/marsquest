@@ -57,6 +57,12 @@ export const TILE_NAMES = [
   'dandelion',
   'blue_orchid',
   'pink_tulip',
+  'venus_flytrap',
+  'sundew_round',
+  'sundew_thread',
+  'sundew_cape',
+  'pitcher_plant',
+  'heliamphora',
   'missing',
 ];
 
@@ -813,8 +819,163 @@ const DRAWERS = {
     stem: [35, 115, 50],
     style: 'tulip',
   }),
+  venus_flytrap: drawVenusFlytrap,
+  sundew_round: (d, s) => drawSundewTile(d, s, 'round'),
+  sundew_thread: (d, s) => drawSundewTile(d, s, 'thread'),
+  sundew_cape: (d, s) => drawSundewTile(d, s, 'cape'),
+  pitcher_plant: (d, s) => drawPitcherTile(d, s, 'classic'),
+  heliamphora: (d, s) => drawPitcherTile(d, s, 'marsh'),
   missing: drawMissing,
 };
+
+/** Oversized Mars venus flytrap: stem + hinged jaws with teeth */
+function drawVenusFlytrap(d, s) {
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) setPx(d, s, x, y, rgb(0, 0, 0, 0));
+  }
+  // thick stem
+  for (let y = 0; y < 7; y++) {
+    setPx(d, s, 7, y, rgb(30, 110, 40));
+    setPx(d, s, 8, y, rgb(40, 130, 50));
+  }
+  // open trap jaws (two lobes)
+  for (let y = 6; y < 14; y++) {
+    for (let x = 2; x < 7; x++) {
+      const t = (y - 6) / 8;
+      if (x >= 2 + t * 1.5 && x <= 6 - t * 0.3) {
+        const inner = x > 4;
+        setPx(d, s, x, y, inner ? rgb(180, 40, 50) : rgb(40, 140, 55));
+      }
+    }
+    for (let x = 9; x < 14; x++) {
+      const t = (y - 6) / 8;
+      if (x <= 13 - t * 1.5 && x >= 9 + t * 0.3) {
+        const inner = x < 11;
+        setPx(d, s, x, y, inner ? rgb(180, 40, 50) : rgb(40, 140, 55));
+      }
+    }
+  }
+  // teeth along rims
+  for (const [x, y] of [[3, 13], [4, 14], [5, 13], [10, 13], [11, 14], [12, 13]]) {
+    setPx(d, s, x, y, rgb(240, 240, 200));
+  }
+  // hinge
+  setPx(d, s, 7, 6, rgb(20, 90, 35));
+  setPx(d, s, 8, 6, rgb(20, 90, 35));
+}
+
+/** Sundew variants: glistening sticky tentacles */
+function drawSundewTile(d, s, kind) {
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) setPx(d, s, x, y, rgb(0, 0, 0, 0));
+  }
+  const stemCol = kind === 'cape' ? [50, 100, 45] : [45, 120, 55];
+  for (let y = 0; y < 6; y++) {
+    setPx(d, s, 7, y, rgb(stemCol[0], stemCol[1], stemCol[2]));
+    setPx(d, s, 8, y, rgb(stemCol[0] + 15, stemCol[1] + 20, stemCol[2]));
+  }
+
+  if (kind === 'thread') {
+    // tall thin sticky threads
+    for (let i = 0; i < 5; i++) {
+      const bx = 3 + i * 2;
+      for (let y = 4; y < 15; y++) {
+        const wob = Math.floor(Math.sin(y * 0.7 + i) * 1.1);
+        const x = bx + wob;
+        if (x >= 0 && x < s) {
+          setPx(d, s, x, y, rgb(200, 90 + i * 8, 130));
+          if (y % 2 === 0) setPx(d, s, x, y, rgb(255, 180, 210)); // dew
+        }
+      }
+    }
+  } else if (kind === 'cape') {
+    // elongated paddle leaves with dew tips
+    for (let i = 0; i < 4; i++) {
+      const ang = -0.6 + i * 0.4;
+      for (let t = 0; t < 9; t++) {
+        const x = Math.round(7.5 + Math.sin(ang) * t * 0.7);
+        const y = 5 + Math.round(t * 0.95);
+        if (x >= 0 && x < s && y < s) {
+          setPx(d, s, x, y, rgb(160, 50, 80));
+          setPx(d, s, x, y - 1, rgb(120, 40, 60));
+          if (t > 5) setPx(d, s, x, y, rgb(255, 160, 200));
+        }
+      }
+    }
+  } else {
+    // round rosette with sticky tentacles
+    for (let y = 5; y < 14; y++) {
+      for (let x = 3; x < 13; x++) {
+        const dx = x - 7.5;
+        const dy = y - 9;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 3.8) {
+          setPx(d, s, x, y, rgb(200, 70, 110));
+          // dew droplets
+          if ((x + y) % 3 === 0 && dist > 1.2) {
+            setPx(d, s, x, y, rgb(255, 200, 230));
+          }
+        }
+      }
+    }
+    setPx(d, s, 7, 9, rgb(90, 40, 50));
+    setPx(d, s, 8, 9, rgb(90, 40, 50));
+  }
+}
+
+/** Pitcher / marsh pitcher urn shapes */
+function drawPitcherTile(d, s, kind) {
+  for (let y = 0; y < s; y++) {
+    for (let x = 0; x < s; x++) setPx(d, s, x, y, rgb(0, 0, 0, 0));
+  }
+  // stem / rhizome
+  for (let y = 0; y < 4; y++) {
+    setPx(d, s, 7, y, rgb(40, 100, 45));
+    setPx(d, s, 8, y, rgb(50, 120, 55));
+  }
+  if (kind === 'marsh') {
+    // open cup heliamphora style — pale gold
+    for (let y = 3; y < 14; y++) {
+      const t = (y - 3) / 11;
+      const half = 1.5 + t * 3.2;
+      for (let x = Math.floor(7.5 - half); x <= Math.ceil(7.5 + half); x++) {
+        if (x < 0 || x >= s) continue;
+        const edge = Math.abs(x - 7.5) > half - 0.8;
+        if (edge) setPx(d, s, x, y, rgb(210, 160, 80));
+        else if (y > 5) setPx(d, s, x, y, rgb(180, 90, 50, 200));
+      }
+    }
+    // rim + nectar
+    for (let x = 3; x < 13; x++) {
+      setPx(d, s, x, 13, rgb(240, 200, 120));
+      setPx(d, s, x, 14, rgb(255, 230, 160));
+    }
+  } else {
+    // classic pitcher with hood
+    for (let y = 3; y < 12; y++) {
+      const t = (y - 3) / 9;
+      const half = 1.2 + Math.sin(t * Math.PI) * 2.8;
+      for (let x = Math.floor(7.5 - half); x <= Math.ceil(7.5 + half); x++) {
+        if (x < 0 || x >= s) continue;
+        const edge = Math.abs(x - 7.5) > half - 0.7;
+        if (edge) setPx(d, s, x, y, rgb(160, 70, 40));
+        else setPx(d, s, x, y, rgb(90, 35, 25));
+      }
+    }
+    // hood / lid
+    for (let y = 11; y < 15; y++) {
+      for (let x = 4; x < 13; x++) {
+        const dx = x - 8;
+        const dy = y - 12;
+        if (dx * dx + dy * dy * 2 < 14) {
+          setPx(d, s, x, y, rgb(200, 90, 50));
+        }
+      }
+    }
+    // peristome shine
+    for (let x = 5; x < 11; x++) setPx(d, s, x, 11, rgb(255, 180, 100));
+  }
+}
 
 /** Cross-plane flower sprite (transparent background, stem + bloom). */
 function drawFlowerTile(d, s, { petal, petalDark, center, stem, style }) {

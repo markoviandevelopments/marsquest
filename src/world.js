@@ -220,7 +220,49 @@ class Chunk {
     }
   }
 
-  /** Rich Mars layer: varied geology, polar ice, magma, structures */
+  /**
+   * Deterministic Mars surface world-Y (matches generateMarsTerrain height formula).
+   * Safe to call from any chunk when placing multi-chunk structures.
+   */
+  marsSurfaceY(wx, wz) {
+    const ox = 9000;
+    const oz = 4200;
+    const base = MARS_Y_MIN;
+    const n1 = this.noise2D((wx + ox) * 0.01, (wz + oz) * 0.01);
+    const n2 = this.noise2D((wx + ox) * 0.04, (wz + oz) * 0.04);
+    const n3 = this.noise2D((wx + ox) * 0.09, (wz + oz) * 0.09);
+    const polar = Math.max(0, 1 - Math.min(wz, WORLD_SIZE - 1 - wz) / 14);
+    const biome = this.marsBiomeAt(wx, wz);
+    let relH = Math.max(1, Math.floor(16 + n1 * 12 + n2 * 4 + n3 * 1.8 - polar * 4));
+    if (biome === 'crater') relH = Math.max(2, relH - 6);
+    if (biome === 'mesa') relH = Math.min(30, relH + 5);
+    if (biome === 'garden') relH = Math.max(3, relH - 1);
+    if (biome === 'volcanic') relH = Math.min(28, relH + 2);
+    return base + relH;
+  }
+
+  /**
+   * Classify Mars biome at world XZ (deterministic noise).
+   * @returns {'polar'|'volcanic'|'crater'|'crystal'|'garden'|'mesa'|'dust'}
+   */
+  marsBiomeAt(wx, wz) {
+    const ox = 9000;
+    const oz = 4200;
+    const polar = Math.max(0, 1 - Math.min(wz, WORLD_SIZE - 1 - wz) / 14);
+    if (polar > 0.55) return 'polar';
+    const heat = this.noise2D((wx + ox) * 0.035 + 3, (wz + oz) * 0.035 + 3);
+    const moist = this.noise2D((wx + ox) * 0.04 + 90, (wz + oz) * 0.04 + 40);
+    const crystalN = this.noise2D((wx + ox) * 0.06 + 200, (wz + oz) * 0.06 + 200);
+    const crater = this.noise2D((wx + ox) * 0.05 + 50, (wz + oz) * 0.05 + 50);
+    if (crater < -0.58) return 'crater';
+    if (heat > 0.58) return 'volcanic';
+    if (crystalN > 0.52 && moist < 0.15) return 'crystal';
+    if (moist > 0.42 && heat > -0.15 && heat < 0.45) return 'garden';
+    if (crater > 0.68) return 'mesa';
+    return 'dust';
+  }
+
+  /** Rich Mars layer: biomes, carnivorous gardens, structures */
   generateMarsTerrain() {
     const worldX = this.cx * CHUNK_SIZE;
     const worldZ = this.cz * CHUNK_SIZE;
@@ -237,6 +279,14 @@ class Chunk {
     const crystal = BlockTypes.MARS_CRYSTAL?.id ?? BlockTypes.GLASS.id;
     const fungus = BlockTypes.ALIEN_FUNGUS?.id ?? 0;
     const brick = BlockTypes.MARS_BRICK?.id ?? rock;
+    const carnivores = [
+      BlockTypes.VENUS_FLYTRAP?.id,
+      BlockTypes.SUNDEW_ROUND?.id,
+      BlockTypes.SUNDEW_THREAD?.id,
+      BlockTypes.SUNDEW_CAPE?.id,
+      BlockTypes.PITCHER_PLANT?.id,
+      BlockTypes.HELIAMPHORA?.id,
+    ].filter((id) => id != null);
 
     // Surface heights for structure pass
     const heights = new Int16Array(CHUNK_SIZE * CHUNK_SIZE);
@@ -248,30 +298,34 @@ class Chunk {
         const n1 = this.noise2D((wx + ox) * 0.01, (wz + oz) * 0.01);
         const n2 = this.noise2D((wx + ox) * 0.04, (wz + oz) * 0.04);
         const n3 = this.noise2D((wx + ox) * 0.09, (wz + oz) * 0.09);
-        // Polar ice caps near Z edges
         const polar = Math.max(0, 1 - Math.min(wz, WORLD_SIZE - 1 - wz) / 14);
-        // Crater: lower bowl near certain noise valleys
         const crater = this.noise2D((wx + ox) * 0.05 + 50, (wz + oz) * 0.05 + 50);
+        const biome = this.marsBiomeAt(wx, wz);
+
         let relH = Math.max(1, Math.floor(16 + n1 * 12 + n2 * 4 + n3 * 1.8 - polar * 4));
-        if (crater < -0.55) relH = Math.max(2, relH - 6);
-        if (crater > 0.7) relH = Math.min(30, relH + 4); // mesas
+        if (biome === 'crater') relH = Math.max(2, relH - 6);
+        if (biome === 'mesa') relH = Math.min(30, relH + 5);
+        if (biome === 'garden') relH = Math.max(3, relH - 1); // slightly lower, moist basins
+        if (biome === 'volcanic') relH = Math.min(28, relH + 2);
         const height = base + relH;
         heights[z * CHUNK_SIZE + x] = height;
-
-        const isPolar = polar > 0.55;
-        const isVolcanic = this.noise2D(wx * 0.07 + 3, wz * 0.07 + 3) > 0.62;
 
         for (let y = base; y <= height; y++) {
           let blockId;
           if (y === base) {
             blockId = BlockTypes.BEDROCK.id;
           } else if (y === height) {
-            if (isPolar) blockId = ice;
-            else if (isVolcanic) blockId = basalt;
+            if (biome === 'polar') blockId = ice;
+            else if (biome === 'volcanic' || biome === 'crater') blockId = basalt;
+            else if (biome === 'mesa') blockId = rock;
+            else if (biome === 'crystal') blockId = rock;
+            else if (biome === 'garden') blockId = dust;
             else blockId = dust;
           } else if (y > height - 3) {
-            blockId = isVolcanic ? basalt : rock;
-          } else if (y > height - 8 && isVolcanic) {
+            if (biome === 'volcanic' || biome === 'crater') blockId = basalt;
+            else if (biome === 'polar') blockId = ice;
+            else blockId = rock;
+          } else if (y > height - 8 && (biome === 'volcanic' || biome === 'crater')) {
             blockId = basalt;
           } else {
             blockId = BlockTypes.STONE.id;
@@ -286,28 +340,50 @@ class Chunk {
             else if (oreNoise > 0.78) blockId = BlockTypes.COAL_ORE.id;
           }
 
-          // Magma pockets in low crater floors
-          if (crater < -0.6 && y > base + 1 && y <= height && y >= height - 1) {
-            if (y === height) blockId = magma || dust;
-            else if (y === height - 1) blockId = basalt;
+          // Magma pools on crater floors / volcanic vents
+          if ((biome === 'crater' || biome === 'volcanic') && y > base + 1 && y <= height && y >= height - 1) {
+            if (biome === 'crater' && crater < -0.62) {
+              if (y === height) blockId = magma || dust;
+              else if (y === height - 1) blockId = basalt;
+            } else if (biome === 'volcanic' && this.noise2D(wx * 0.3, wz * 0.3) > 0.82 && y === height) {
+              blockId = magma || basalt;
+            }
           }
 
           this.setWorldY(x, y, z, blockId);
         }
 
-        // Alien fungus on dust flats
-        if (!isPolar && fungus && crater > -0.2 && crater < 0.4) {
-          if (this.noise2D(wx * 0.2 + 9, wz * 0.2 + 9) > 0.78) {
+        // --- Surface decoration by biome (no plunger-like crystal sticks) ---
+        if (biome === 'dust' && fungus) {
+          if (this.noise2D(wx * 0.2 + 9, wz * 0.2 + 9) > 0.8) {
             this.setWorldY(x, height + 1, z, fungus);
           }
         }
 
-        // Surface crystal spikes
-        if (crystal && this.noise2D(wx * 0.18 + 1, wz * 0.18 + 1) > 0.88) {
-          const h = 2 + Math.floor(this.noise2D(wx, wz) * 3);
-          for (let i = 1; i <= h; i++) {
-            this.setWorldY(x, height + i, z, crystal);
+        // Crystal biome: low, wide geode clusters (not tall thin spikes)
+        if (biome === 'crystal' && crystal) {
+          const cn = this.noise2D(wx * 0.22 + 1, wz * 0.22 + 1);
+          if (cn > 0.72) {
+            this.setWorldY(x, height + 1, z, crystal);
+            if (cn > 0.86) this.setWorldY(x, height + 2, z, crystal);
           }
+        }
+
+        // Garden biome: oversized carnivorous plants + sparse fungus
+        if (biome === 'garden' && carnivores.length) {
+          const gn = this.noise2D(wx * 0.28 + 17, wz * 0.28 + 41);
+          if (gn > 0.38) {
+            // Integer hash so each carnivore type is roughly equal
+            const pick = ((wx * 73856093) ^ (wz * 19349663) ^ (Math.floor(gn * 1000))) >>> 0;
+            this.setWorldY(x, height + 1, z, carnivores[pick % carnivores.length]);
+          } else if (fungus && gn > 0.22) {
+            this.setWorldY(x, height + 1, z, fungus);
+          }
+        }
+
+        // Polar frost fungus (rare ice blooms via ice crystals on surface only)
+        if (biome === 'mesa' && fungus && this.noise2D(wx * 0.25, wz * 0.25) > 0.9) {
+          this.setWorldY(x, height + 1, z, fungus);
         }
       }
     }
@@ -319,11 +395,12 @@ class Chunk {
   }
 
   /**
-   * Deterministic Mars landmarks: ruins, pillars, meteor impacts, portal shrine.
+   * Deterministic Mars landmarks: portal shrine, basalt outcrops, meteor impacts,
+   * sparse ruins, and the elaborate colony town (Olympus Reach).
    * @param {Int16Array} heights surface world-Y per local x,z
    */
   placeMarsStructures(worldX, worldZ, heights, ids) {
-    const { rock, basalt, brick, meteor, crystal, ice } = ids;
+    const { rock, basalt, brick, meteor, crystal, ice, dust } = ids;
 
     const setW = (wx, wy, wz, id) => {
       if (wx < worldX || wx >= worldX + CHUNK_SIZE) return;
@@ -359,10 +436,14 @@ class Chunk {
           setW(cx + dx, sy + 3, cz + dz, 0);
         }
       }
-      // Pillars
-      for (const [dx, dz] of [[-3, -3], [-3, 3], [3, -3], [3, 3]]) {
-        for (let y = 1; y <= 4; y++) setW(cx + dx, sy + y, cz + dz, basalt);
-        setW(cx + dx, sy + 5, cz + dz, crystal);
+      // Thick corner columns (2×2 base) — not thin plunger spikes
+      for (const [dx, dz] of [[-3, -3], [-3, 2], [2, -3], [2, 2]]) {
+        for (let ox = 0; ox <= 1; ox++) {
+          for (let oz = 0; oz <= 1; oz++) {
+            for (let y = 1; y <= 4; y++) setW(cx + dx + ox, sy + y, cz + dz + oz, basalt);
+            setW(cx + dx + ox, sy + 5, cz + dz + oz, brick);
+          }
+        }
       }
       // Portal
       setW(cx, sy + 1, cz, BlockTypes.EARTH_PORTAL?.id ?? brick);
@@ -375,17 +456,21 @@ class Chunk {
       }
     }
 
-    // --- Ruined habitats (grid of seeds) ---
-    for (let gx = 0; gx < WORLD_SIZE; gx += 18) {
-      for (let gz = 0; gz < WORLD_SIZE; gz += 18) {
+    // --- Elaborate colony town: Olympus Reach (fixed SE of portal) ---
+    this.placeMarsTown(worldX, worldZ, heights, ids, setW, surfAt);
+
+    // --- Sparse ruined outposts (away from town & portal) ---
+    for (let gx = 0; gx < WORLD_SIZE; gx += 22) {
+      for (let gz = 0; gz < WORLD_SIZE; gz += 22) {
         const seed = this.noise2D(gx * 0.3 + 2, gz * 0.3 + 2);
-        if (seed < 0.55) continue;
+        if (seed < 0.62) continue;
         const ox = gx + 4 + Math.floor(((seed + 1) * 0.5) * 6);
         const oz = gz + 4 + Math.floor(((seed + 1) * 0.5) * 5);
         if (ox < worldX - 4 || ox > worldX + CHUNK_SIZE + 4) continue;
         if (oz < worldZ - 4 || oz > worldZ + CHUNK_SIZE + 4) continue;
-        // Skip near portal
-        if (Math.abs(ox - WORLD_CENTER) < 8 && Math.abs(oz - WORLD_CENTER) < 8) continue;
+        // Skip near portal and town footprint
+        if (Math.abs(ox - WORLD_CENTER) < 10 && Math.abs(oz - WORLD_CENTER) < 10) continue;
+        if (ox >= 12 && ox <= 42 && oz >= 58 && oz <= 88) continue;
 
         const sy = surfAt(
           Math.max(worldX, Math.min(worldX + CHUNK_SIZE - 1, ox)),
@@ -401,7 +486,6 @@ class Chunk {
               const edge = dx === 0 || dx === w - 1 || dz === 0 || dz === d - 1;
               const door = dz === 0 && dx === 2 && dy <= 2;
               if (edge && !door) {
-                // Broken walls
                 if (this.noise3D(ox + dx, dy, oz + dz) > 0.25) {
                   setW(ox + dx, sy + dy, oz + dz, brick);
                 }
@@ -409,33 +493,36 @@ class Chunk {
                 setW(ox + dx, sy + dy, oz + dz, 0);
               }
             }
-            // partial roof
             if (this.noise2D(ox + dx, oz + dz) > 0.35) {
               setW(ox + dx, sy + h + 1, oz + dz, basalt);
             }
           }
         }
-        // Chest-like loot block inside (meteorite + crystal)
         setW(ox + 2, sy + 1, oz + 2, meteor);
         setW(ox + 1, sy + 1, oz + 2, crystal);
       }
     }
 
-    // --- Basalt pillars ---
-    for (let i = 0; i < 8; i++) {
+    // --- Thick basalt outcrops (2×2 columns / short ridges — not plunger sticks) ---
+    for (let i = 0; i < 5; i++) {
       const px = worldX + Math.floor(this.noise2D(this.cx * 3 + i, this.cz * 3 + 1) * 0.5 * CHUNK_SIZE + CHUNK_SIZE * 0.25);
       const pz = worldZ + Math.floor(this.noise2D(this.cx * 3 + 2, this.cz * 3 + i) * 0.5 * CHUNK_SIZE + CHUNK_SIZE * 0.25);
-      if (px < worldX || px >= worldX + CHUNK_SIZE || pz < worldZ || pz >= worldZ + CHUNK_SIZE) continue;
-      if (Math.abs(px - WORLD_CENTER) < 6 && Math.abs(pz - WORLD_CENTER) < 6) continue;
+      if (px < worldX || px >= worldX + CHUNK_SIZE - 1 || pz < worldZ || pz >= worldZ + CHUNK_SIZE - 1) continue;
+      if (Math.abs(px - WORLD_CENTER) < 8 && Math.abs(pz - WORLD_CENTER) < 8) continue;
+      if (px >= 12 && px <= 42 && pz >= 58 && pz <= 88) continue;
       const n = this.noise2D(px * 0.4, pz * 0.4);
-      if (n < 0.45) continue;
+      if (n < 0.5) continue;
       const sy = surfAt(px, pz);
-      const tall = 4 + Math.floor((n + 1) * 3);
-      for (let y = 1; y <= tall; y++) {
-        setW(px, sy + y, pz, basalt);
-        if (y > 2 && this.noise2D(px + y, pz) > 0.7) setW(px + 1, sy + y, pz, basalt);
+      const tall = 3 + Math.floor((n + 1) * 2); // 3–7, shorter bulk
+      for (let ox = 0; ox <= 1; ox++) {
+        for (let oz = 0; oz <= 1; oz++) {
+          for (let y = 1; y <= tall; y++) {
+            setW(px + ox, sy + y, pz + oz, basalt);
+          }
+          // Flat rock cap (brick), never lone crystal hat
+          setW(px + ox, sy + tall + 1, pz + oz, rock);
+        }
       }
-      if (n > 0.7) setW(px, sy + tall + 1, pz, crystal);
     }
 
     // --- Meteor impact crater (chunk-local rare) ---
@@ -443,17 +530,246 @@ class Chunk {
     if (impact > 0.72) {
       const mx = worldX + 8;
       const mz = worldZ + 8;
-      const sy = surfAt(mx, mz);
-      for (let dx = -3; dx <= 3; dx++) {
-        for (let dz = -3; dz <= 3; dz++) {
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist > 3.2) continue;
-          const dig = dist < 1.5 ? 2 : 1;
-          for (let k = 0; k < dig; k++) {
-            setW(mx + dx, sy - k, mz + dz, dist < 1.2 ? meteor : rock);
+      if (!(mx >= 12 && mx <= 42 && mz >= 58 && mz <= 88)) {
+        const sy = surfAt(mx, mz);
+        for (let dx = -3; dx <= 3; dx++) {
+          for (let dz = -3; dz <= 3; dz++) {
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            if (dist > 3.2) continue;
+            const dig = dist < 1.5 ? 2 : 1;
+            for (let k = 0; k < dig; k++) {
+              setW(mx + dx, sy - k, mz + dz, dist < 1.2 ? meteor : rock);
+            }
+            if (dist < 1.1) setW(mx + dx, sy + 1, mz + dz, meteor);
           }
-          if (dist < 1.1) setW(mx + dx, sy + 1, mz + dz, meteor);
         }
+      }
+    }
+  }
+
+  /**
+   * Olympus Reach — multi-building Mars colony with plaza, walls, tower, and workshops.
+   * Anchor near (24, 68); spans ~28×28 blocks, multi-chunk safe via setW.
+   */
+  placeMarsTown(worldX, worldZ, heights, ids, setW, surfAt) {
+    const { rock, basalt, brick, meteor, crystal, ice, dust } = ids;
+    const chestId = BlockTypes.CHEST?.id ?? meteor;
+    const torchId = BlockTypes.TORCH?.id ?? ice;
+    const glassId = BlockTypes.GLASS?.id ?? ice;
+    const planksId = BlockTypes.PLANKS?.id ?? brick;
+
+    // Town bounding box
+    const x0 = 18;
+    const z0 = 62;
+    const tw = 28;
+    const td = 26;
+    // Early out if this chunk can't touch the town
+    if (worldX + CHUNK_SIZE <= x0 - 1 || worldX >= x0 + tw + 1) return;
+    if (worldZ + CHUNK_SIZE <= z0 - 1 || worldZ >= z0 + td + 1) return;
+
+    // Flatten base Y using center surface — noise-based so every chunk agrees
+    const midX = x0 + Math.floor(tw / 2);
+    const midZ = z0 + Math.floor(td / 2);
+    let baseY = this.marsSurfaceY(midX, midZ);
+    if (baseY < MARS_Y_MIN + 8) baseY = MARS_Y_MIN + 16;
+    if (baseY > MARS_Y_MAX - 14) baseY = MARS_Y_MAX - 14;
+
+    const fillBox = (x1, y1, z1, x2, y2, z2, id) => {
+      const xa = Math.min(x1, x2);
+      const xb = Math.max(x1, x2);
+      const ya = Math.min(y1, y2);
+      const yb = Math.max(y1, y2);
+      const za = Math.min(z1, z2);
+      const zb = Math.max(z1, z2);
+      for (let x = xa; x <= xb; x++) {
+        for (let y = ya; y <= yb; y++) {
+          for (let z = za; z <= zb; z++) setW(x, y, z, id);
+        }
+      }
+    };
+    const clearBox = (x1, y1, z1, x2, y2, z2) => fillBox(x1, y1, z1, x2, y2, z2, 0);
+    const wallRing = (x1, z1, x2, z2, y0, h, id, doorZ = null, doorX = null) => {
+      for (let y = 1; y <= h; y++) {
+        for (let x = x1; x <= x2; x++) {
+          for (let z = z1; z <= z2; z++) {
+            const edge = x === x1 || x === x2 || z === z1 || z === z2;
+            if (!edge) continue;
+            // Gate opening on south wall
+            if (doorZ != null && z === doorZ && x >= doorX - 1 && x <= doorX + 1 && y <= 2) continue;
+            setW(x, y0 + y, z, id);
+          }
+        }
+      }
+    };
+
+    // Foundation pad + clear air
+    for (let dx = 0; dx < tw; dx++) {
+      for (let dz = 0; dz < td; dz++) {
+        const wx = x0 + dx;
+        const wz = z0 + dz;
+        setW(wx, baseY, wz, brick);
+        setW(wx, baseY - 1, wz, rock);
+        for (let y = 1; y <= 10; y++) setW(wx, baseY + y, wz, 0);
+      }
+    }
+
+    // Outer wall with crenellations + south gate
+    wallRing(x0, z0, x0 + tw - 1, z0 + td - 1, baseY, 4, basalt, z0, midX);
+    // Crenellation tops
+    for (let x = x0; x < x0 + tw; x += 2) {
+      setW(x, baseY + 5, z0, brick);
+      setW(x, baseY + 5, z0 + td - 1, brick);
+    }
+    for (let z = z0; z < z0 + td; z += 2) {
+      setW(x0, baseY + 5, z, brick);
+      setW(x0 + tw - 1, baseY + 5, z, brick);
+    }
+    // Gate towers
+    for (const gx of [midX - 3, midX + 2]) {
+      fillBox(gx, baseY + 1, z0, gx + 1, baseY + 6, z0 + 1, basalt);
+      setW(gx, baseY + 7, z0, crystal);
+      setW(gx + 1, baseY + 7, z0, crystal);
+    }
+    // Gate arch floor path
+    for (let z = z0; z <= z0 + 2; z++) {
+      for (let x = midX - 1; x <= midX + 1; x++) {
+        setW(x, baseY, z, dust ?? brick);
+        setW(x, baseY + 1, z, 0);
+        setW(x, baseY + 2, z, 0);
+      }
+    }
+
+    // Main street (N-S) and cross avenue (E-W)
+    for (let z = z0 + 3; z < z0 + td - 2; z++) {
+      for (let x = midX - 1; x <= midX + 1; x++) setW(x, baseY, z, basalt);
+    }
+    for (let x = x0 + 2; x < x0 + tw - 2; x++) {
+      for (let z = midZ - 1; z <= midZ + 1; z++) setW(x, baseY, z, basalt);
+    }
+
+    // Central plaza + fountain
+    fillBox(midX - 3, baseY, midZ - 3, midX + 3, baseY, midZ + 3, brick);
+    fillBox(midX - 1, baseY + 1, midZ - 1, midX + 1, baseY + 1, midZ + 1, ice);
+    setW(midX, baseY + 2, midZ, crystal);
+    setW(midX, baseY + 3, midZ, crystal);
+    // Plaza lantern posts (thick, not plungers)
+    for (const [lx, lz] of [[midX - 3, midZ - 3], [midX + 3, midZ - 3], [midX - 3, midZ + 3], [midX + 3, midZ + 3]]) {
+      setW(lx, baseY + 1, lz, basalt);
+      setW(lx, baseY + 2, lz, basalt);
+      setW(lx, baseY + 3, lz, ice);
+    }
+
+    /** Simple interior building: floor already pad; walls + roof + door on south */
+    const buildHouse = (hx, hz, hw, hd, hh, roofId, doorFace = 's') => {
+      // Floor accent
+      fillBox(hx, baseY, hz, hx + hw - 1, baseY, hz + hd - 1, brick);
+      clearBox(hx, baseY + 1, hz, hx + hw - 1, baseY + hh + 1, hz + hd - 1);
+      for (let y = 1; y <= hh; y++) {
+        for (let x = hx; x < hx + hw; x++) {
+          for (let z = hz; z < hz + hd; z++) {
+            const edge = x === hx || x === hx + hw - 1 || z === hz || z === hz + hd - 1;
+            if (!edge) continue;
+            // Door
+            const doorX = hx + Math.floor(hw / 2);
+            const doorZ = hz + Math.floor(hd / 2);
+            if (doorFace === 's' && z === hz + hd - 1 && x === doorX && y <= 2) continue;
+            if (doorFace === 'n' && z === hz && x === doorX && y <= 2) continue;
+            if (doorFace === 'e' && x === hx + hw - 1 && z === doorZ && y <= 2) continue;
+            if (doorFace === 'w' && x === hx && z === doorZ && y <= 2) continue;
+            // Windows
+            const win =
+              y === 2 &&
+              ((x === hx || x === hx + hw - 1) && z > hz && z < hz + hd - 1 && (z - hz) % 2 === 1 ||
+                (z === hz || z === hz + hd - 1) && x > hx && x < hx + hw - 1 && (x - hx) % 2 === 1);
+            setW(x, baseY + y, z, win ? glassId : brick);
+          }
+        }
+      }
+      // Roof
+      fillBox(hx - 0, baseY + hh + 1, hz, hx + hw - 1, baseY + hh + 1, hz + hd - 1, roofId);
+      // Interior furniture
+      setW(hx + 1, baseY + 1, hz + 1, chestId);
+      setW(hx + hw - 2, baseY + 1, hz + 1, torchId);
+    };
+
+    // Town hall (large, north of plaza)
+    buildHouse(midX - 5, midZ + 5, 11, 7, 5, basalt, 's');
+    // Extra hall spire
+    fillBox(midX - 1, baseY + 6, midZ + 7, midX + 1, baseY + 9, midZ + 9, basalt);
+    setW(midX, baseY + 10, midZ + 8, crystal);
+    fillBox(midX - 1, baseY + 1, midZ + 7, midX + 1, baseY + 1, midZ + 8, planksId);
+    setW(midX, baseY + 1, midZ + 8, meteor);
+
+    // Residences west
+    buildHouse(x0 + 3, z0 + 4, 6, 5, 3, rock, 'e');
+    buildHouse(x0 + 3, z0 + 11, 6, 5, 3, rock, 'e');
+    buildHouse(x0 + 3, midZ + 5, 6, 5, 4, rock, 'e');
+
+    // Residences east
+    buildHouse(x0 + tw - 9, z0 + 4, 6, 5, 3, rock, 'w');
+    buildHouse(x0 + tw - 9, z0 + 11, 6, 5, 3, rock, 'w');
+
+    // Workshop / smeltery SW
+    buildHouse(x0 + 4, z0 + td - 9, 8, 6, 3, basalt, 'n');
+    setW(x0 + 6, baseY + 1, z0 + td - 7, BlockTypes.FURNACE?.id ?? meteor);
+    setW(x0 + 7, baseY + 1, z0 + td - 7, meteor);
+
+    // Observatory tower SE — wide cylinder-ish (not a plunger)
+    {
+      const tx = x0 + tw - 8;
+      const tz = z0 + td - 9;
+      fillBox(tx, baseY, tz, tx + 4, baseY, tz + 4, brick);
+      for (let y = 1; y <= 8; y++) {
+        for (let dx = 0; dx <= 4; dx++) {
+          for (let dz = 0; dz <= 4; dz++) {
+            const edge = dx === 0 || dx === 4 || dz === 0 || dz === 4;
+            if (edge) setW(tx + dx, baseY + y, tz + dz, basalt);
+            else setW(tx + dx, baseY + y, tz + dz, 0);
+          }
+        }
+      }
+      // Door north
+      setW(tx + 2, baseY + 1, tz, 0);
+      setW(tx + 2, baseY + 2, tz, 0);
+      // Observation deck
+      fillBox(tx, baseY + 9, tz, tx + 4, baseY + 9, tz + 4, brick);
+      fillBox(tx + 1, baseY + 10, tz + 1, tx + 3, baseY + 10, tz + 3, glassId);
+      setW(tx + 2, baseY + 11, tz + 2, ice);
+      setW(tx + 1, baseY + 1, tz + 2, chestId);
+      setW(tx + 3, baseY + 1, tz + 2, torchId);
+    }
+
+    // Market stalls near plaza (open roofs)
+    for (const [sx, sz] of [[midX - 7, midZ - 2], [midX + 4, midZ - 2]]) {
+      fillBox(sx, baseY + 1, sz, sx + 2, baseY + 1, sz + 2, 0);
+      setW(sx, baseY + 1, sz, basalt);
+      setW(sx + 2, baseY + 1, sz, basalt);
+      setW(sx, baseY + 1, sz + 2, basalt);
+      setW(sx + 2, baseY + 1, sz + 2, basalt);
+      fillBox(sx, baseY + 3, sz, sx + 2, baseY + 3, sz + 2, planksId);
+      setW(sx + 1, baseY + 1, sz + 1, crystal);
+    }
+
+    // Street lamps along main road
+    for (let z = z0 + 5; z < z0 + td - 3; z += 4) {
+      for (const side of [-3, 3]) {
+        const lx = midX + side;
+        setW(lx, baseY + 1, z, basalt);
+        setW(lx, baseY + 2, z, basalt);
+        setW(lx, baseY + 3, z, ice);
+      }
+    }
+
+    // Decorative garden strip outside east wall (carnivores if available)
+    const fly = BlockTypes.VENUS_FLYTRAP?.id;
+    const sundew = BlockTypes.SUNDEW_ROUND?.id;
+    const pitcher = BlockTypes.PITCHER_PLANT?.id;
+    if (fly && sundew && pitcher) {
+      for (let i = 0; i < 6; i++) {
+        const gx = x0 + tw + 1;
+        const gz = z0 + 4 + i * 3;
+        setW(gx, baseY, gz, dust ?? rock);
+        setW(gx, baseY + 1, gz, [fly, sundew, pitcher][i % 3]);
       }
     }
   }
@@ -655,27 +971,35 @@ class Chunk {
   /**
    * Two crossed vertical quads for flowers (X shape when viewed from above).
    * Uses the block texture as a cutout sprite on both diagonals.
+   * Carnivorous Mars plants can be oversized via plantHeight / plantWidth.
    */
   addPlantCross(plantGeos, x, y, z, blockType) {
     const tileName = blockType.texture || 'missing';
     const { u0, v0, u1, v1 } = getTileUV(tileName);
-    const shade = 1.0;
+    const shade = blockType.isCarnivorousPlant ? 1.05 : 1.0;
+    const h = Math.max(1, blockType.plantHeight || 1);
+    const w = Math.max(1, blockType.plantWidth || 1);
+    // Center a wider plant on the block cell
+    const ox0 = 0.5 - w * 0.5;
+    const ox1 = 0.5 + w * 0.5;
+    const oz0 = 0.5 - w * 0.5;
+    const oz1 = 0.5 + w * 0.5;
     // Slight inset so edges don't z-fight with adjacent cubes
-    const inset = 0.05;
+    const inset = 0.05 * Math.min(1, w);
     const planes = [
-      // diagonal from (0,0)-(1,1) in XZ
+      // diagonal from low-low to high-high in XZ
       [
-        [inset, 0, inset],
-        [inset, 1, inset],
-        [1 - inset, 1, 1 - inset],
-        [1 - inset, 0, 1 - inset],
+        [ox0 + inset, 0, oz0 + inset],
+        [ox0 + inset, h, oz0 + inset],
+        [ox1 - inset, h, oz1 - inset],
+        [ox1 - inset, 0, oz1 - inset],
       ],
-      // diagonal from (1,0)-(0,1) in XZ
+      // diagonal from high-low to low-high in XZ
       [
-        [1 - inset, 0, inset],
-        [1 - inset, 1, inset],
-        [inset, 1, 1 - inset],
-        [inset, 0, 1 - inset],
+        [ox1 - inset, 0, oz0 + inset],
+        [ox1 - inset, h, oz0 + inset],
+        [ox0 + inset, h, oz1 - inset],
+        [ox0 + inset, 0, oz1 - inset],
       ],
     ];
     // Flower tile art is drawn with stem at low image-Y (top of canvas) and
