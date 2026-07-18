@@ -129,6 +129,11 @@ export class Network {
     this.send({ type: 'chat', text: String(text || '').slice(0, 200) });
   }
 
+  /** Yell — nearby players (within radius) hear it; the yeller hears it too. */
+  sendYell(radius = 20) {
+    this.send({ type: 'yell', radius: radius | 0 });
+  }
+
   sendSign(x, y, z, text, facing = 0) {
     this.send({ type: 'sign', x, y, z, text, facing: facing | 0 });
   }

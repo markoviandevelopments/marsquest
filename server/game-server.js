@@ -29,6 +29,7 @@ const WS_PING_MS = 30_000;
 const SAVE_DEBOUNCE_MS = 2500;
 const CHEST_MAX_TYPES = 30;
 const CHAT_HISTORY_MAX = 40;
+const YELL_RADIUS = 20; // blocks — players within this distance hear a yell
 
 const ADJECTIVES = [
   'Swift', 'Lucky', 'Brave', 'Clever', 'Mighty', 'Silent', 'Fuzzy', 'Cosmic',
@@ -600,6 +601,38 @@ async function createApp() {
           }
           if (msg.time && typeof msg.time === 'object') timeState = msg.time;
           scheduleSave();
+          break;
+        }
+        case 'yell': {
+          // A player yells — nearby players (within YELL_RADIUS blocks) hear it,
+          // including the yeller themselves.
+          const radius = Number(msg.radius) || YELL_RADIUS;
+          const r2 = radius * radius;
+          const origin = { x: player.x, y: player.y, z: player.z };
+          const payload = {
+            type: 'yell',
+            id,
+            username: player.username,
+            x: origin.x,
+            y: origin.y,
+            z: origin.z,
+            radius,
+          };
+          const data = JSON.stringify(payload);
+          for (const p of players.values()) {
+            if (p.ws.readyState !== 1) continue;
+            // The yeller always hears their own yell; others only if within radius.
+            if (p.id === id) {
+              p.ws.send(data);
+              continue;
+            }
+            const dx = p.x - origin.x;
+            const dy = p.y - origin.y;
+            const dz = p.z - origin.z;
+            if (dx * dx + dy * dy + dz * dz <= r2) {
+              p.ws.send(data);
+            }
+          }
           break;
         }
         case 'chat': {

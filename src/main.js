@@ -59,6 +59,63 @@ import {
 // Warm procedural atlas so first chunk mesh has textures ready
 getAtlasTexture();
 
+// --- Procedural "yell" sound (Web Audio, no asset files) --------------------
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    _audioCtx = new AC();
+  }
+  // Browsers suspend the context until a user gesture; resume on demand.
+  if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+  return _audioCtx;
+}
+
+/**
+ * Play a short synthesized "yell" — a vocal-ish tone that rises then falls.
+ * @param {number} [volume] 0..1
+ */
+function playYellSound(volume = 0.6) {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+  const dur = 0.55;
+
+  // Two detuned saw oscillators through a bandpass give a "voice" character.
+  const osc1 = ctx.createOscillator();
+  const osc2 = ctx.createOscillator();
+  osc1.type = 'sawtooth';
+  osc2.type = 'sawtooth';
+  osc1.frequency.setValueAtTime(220, now);
+  osc2.frequency.setValueAtTime(223, now);
+  // Pitch contour: rise then fall (a shout).
+  osc1.frequency.linearRampToValueAtTime(440, now + 0.12);
+  osc1.frequency.linearRampToValueAtTime(300, now + dur);
+  osc2.frequency.linearRampToValueAtTime(446, now + 0.12);
+  osc2.frequency.linearRampToValueAtTime(304, now + dur);
+
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  band.frequency.value = 900;
+  band.Q.value = 1.2;
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(volume, now + 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+  osc1.connect(band);
+  osc2.connect(band);
+  band.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc1.start(now);
+  osc2.start(now);
+  osc1.stop(now + dur);
+  osc2.stop(now + dur);
+}
+
 // Game state
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -1167,6 +1224,14 @@ network.on('chat', (msg) => {
   else chat.append({ username: msg.username, text: msg.text });
 });
 
+network.on('yell', (msg) => {
+  if (!msg || !msg.username) return;
+  // Play the yell sound for anyone who receives it (including the yeller).
+  playYellSound(0.6);
+  const who = msg.username === network.username ? 'You' : msg.username;
+  chat.system(`${who} yelled!`);
+});
+
 network.on('skip_night', (msg) => {
   if (msg && typeof msg.time === 'number') {
     dayNight.setTime(msg.time);
@@ -1333,6 +1398,15 @@ window.addEventListener('keydown', (e) => {
         chat.system('No food — craft pretzels from wheat, cook anacharis, or get cheese');
       }
     }
+    return;
+  }
+
+  // Y yells — nearby players (within 20 blocks) hear it, and you hear yourself.
+  if (e.code === 'KeyY' && !e.ctrlKey && !e.metaKey && !gameMode.dead) {
+    e.preventDefault();
+    network.sendYell(20);
+    playYellSound(0.6);
+    chat.system('You yelled!');
     return;
   }
 
@@ -2422,6 +2496,6 @@ if (helpEl && !mobileMode) {
   helpEl.innerHTML =
     'Click to play · WASD move · Space jump/swim · Shift sprint<br>' +
     'LMB mine · RMB place · <b>1–9/0</b> hotbar · <b>E</b> inventory · <b>C</b> food<br>' +
-    '<b>Esc</b> menu · Hold Space in water to swim up';
+    '<b>Esc</b> menu · Hold Space in water to swim up · <b>Y</b> yell';
 }
 animate(performance.now());
