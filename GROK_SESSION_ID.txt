@@ -1,0 +1,7 @@
+# Grok session for Blockworld
+# Resume with: grok --resume 019f765c-5726-79a3-8f9f-408b62af5fb0
+# Or from this directory: grok --resume
+# Created: 2026-07-18
+
+SESSION_ID=019f765c-5726-79a3-8f9f-408b62af5fb0
+CWD=/home/preston/Desktop/Blockworld
