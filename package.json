@@ -1,0 +1,21 @@
+{
+  "name": "minecraft-clone",
+  "version": "1.0.0",
+  "description": "A Minecraft clone built with Three.js — mine, place, multiplayer",
+  "main": "src/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node server/game-server.js",
+    "build": "vite build",
+    "start": "NODE_ENV=production node server/game-server.js",
+    "preview": "vite preview",
+    "test": "node test/smoke.mjs && node test/check_meshes.mjs && node test/faces.mjs && node test/edit.mjs"
+  },
+  "dependencies": {
+    "three": "^0.160.0",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}

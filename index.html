@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#5d9b3b">
+  <title>Minecraft Clone</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/favicon.svg">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      overflow: hidden;
+      background: #87CEEB;
+      font-family: monospace;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    canvas { display: block; touch-action: none; }
+    #crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #crosshair::before, #crosshair::after {
+      content: '';
+      position: absolute;
+      background: white;
+      mix-blend-mode: difference;
+    }
+    #crosshair::before { width: 2px; height: 20px; left: 9px; }
+    #crosshair::after { width: 20px; height: 2px; top: 9px; }
+    #hotbar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 4px;
+      padding: 8px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 8px;
+      border: 2px solid #333;
+      z-index: 10;
+      max-width: calc(100vw - 24px);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
+    }
+    .slot {
+      width: 50px;
+      min-width: 50px;
+      height: 50px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 2px solid #555;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 11px;
+      text-align: center;
+      text-shadow: 1px 1px 2px black;
+      position: relative;
+      padding: 2px;
+      line-height: 1.1;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .slot.selected {
+      border-color: white;
+      background: rgba(255, 255, 255, 0.3);
+    }
+    .slot .count {
+      position: absolute;
+      bottom: 2px;
+      right: 4px;
+      font-size: 10px;
+    }
+    #debug {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      color: white;
+      font-size: 12px;
+      text-shadow: 1px 1px 2px black;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 4px;
+      line-height: 1.45;
+      pointer-events: none;
+    }
+    #block-preview {
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: white;
+      text-shadow: 1px 1px 2px black;
+      font-size: 14px;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 5px 10px;
+      border-radius: 4px;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #hud-right {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-end;
+      max-width: 220px;
+      pointer-events: none;
+    }
+    #username-badge {
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      font-size: 13px;
+      text-shadow: 1px 1px 2px black;
+    }
+    #username-badge span {
+      color: #7CFC00;
+      font-weight: bold;
+    }
+    #players {
+      background: rgba(0, 0, 0, 0.55);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      font-size: 12px;
+      min-width: 140px;
+      text-shadow: 1px 1px 2px black;
+    }
+    #players .title {
+      opacity: 0.7;
+      margin-bottom: 4px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .player-row { padding: 2px 0; }
+    .player-row.self { color: #7CFC00; }
+    .player-row.muted { opacity: 0.6; font-style: italic; }
+    #help {
+      position: fixed;
+      bottom: 20px;
+      left: 10px;
+      color: rgba(255,255,255,0.85);
+      font-size: 11px;
+      text-shadow: 1px 1px 2px black;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.45);
+      padding: 8px 10px;
+      border-radius: 4px;
+      line-height: 1.5;
+      pointer-events: none;
+    }
+
+    /* ---- Mobile on-screen controls ---- */
+    #mobile-controls {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      pointer-events: none;
+    }
+    #mobile-controls.active { display: block; }
+
+    #joystick-zone {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 46%;
+      height: 42%;
+      max-width: 280px;
+      max-height: 280px;
+      pointer-events: auto;
+      touch-action: none;
+      /* safe area for notched phones */
+      padding-left: env(safe-area-inset-left, 0);
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    #joystick-base {
+      position: absolute;
+      left: 28px;
+      bottom: 28px;
+      width: 130px;
+      height: 130px;
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.28);
+      border: 2px solid rgba(255, 255, 255, 0.35);
+      box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.25);
+    }
+    #joystick-base.active {
+      border-color: rgba(255, 255, 255, 0.7);
+      background: rgba(0, 0, 0, 0.4);
+    }
+    #joystick-knob {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.45);
+      border: 2px solid rgba(255, 255, 255, 0.85);
+      transform: translate(-50%, -50%);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      will-change: transform;
+    }
+
+    #action-pad {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      width: 48%;
+      height: 48%;
+      max-width: 320px;
+      max-height: 320px;
+      pointer-events: none;
+      padding-right: max(12px, env(safe-area-inset-right, 0px));
+      padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    }
+    .mobile-btn {
+      position: absolute;
+      pointer-events: auto;
+      touch-action: none;
+      border: 2px solid rgba(255, 255, 255, 0.45);
+      border-radius: 50%;
+      background: rgba(0, 0, 0, 0.38);
+      color: #fff;
+      font-family: monospace;
+      font-weight: bold;
+      text-shadow: 0 1px 2px #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 2px;
+      user-select: none;
+      -webkit-user-select: none;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      line-height: 1.1;
+    }
+    .mobile-btn .label { font-size: 11px; opacity: 0.9; letter-spacing: 0.02em; }
+    .mobile-btn .icon { font-size: 22px; line-height: 1; }
+    .mobile-btn.pressed,
+    .mobile-btn:active {
+      background: rgba(255, 255, 255, 0.35);
+      border-color: #fff;
+      transform: scale(0.96);
+    }
+    #btn-jump {
+      width: 76px; height: 76px;
+      right: 18px; bottom: 110px;
+    }
+    #btn-sprint {
+      width: 64px; height: 64px;
+      right: 100px; bottom: 28px;
+    }
+    #btn-break {
+      width: 78px; height: 78px;
+      right: 18px; bottom: 28px;
+      background: rgba(180, 40, 40, 0.45);
+      border-color: rgba(255, 120, 120, 0.7);
+    }
+    #btn-place {
+      width: 70px; height: 70px;
+      right: 110px; bottom: 110px;
+      background: rgba(40, 120, 60, 0.45);
+      border-color: rgba(120, 255, 150, 0.65);
+    }
+    #btn-prev-block, #btn-next-block {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      bottom: 200px;
+    }
+    #btn-prev-block { right: 78px; }
+    #btn-next-block { right: 18px; }
+
+    .mobile-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      color: rgba(255,255,255,0.35);
+      font-size: 13px;
+      text-shadow: 0 1px 3px #000;
+      text-align: center;
+      display: none;
+      transition: opacity 0.5s ease;
+    }
+    body.mobile-mode .mobile-hint { display: block; }
+    body.mobile-mode #help { display: none; }
+    body.mobile-mode #hotbar {
+      bottom: auto;
+      top: max(8px, env(safe-area-inset-top, 0px));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 25;
+      pointer-events: auto;
+    }
+    body.mobile-mode #block-preview {
+      bottom: auto;
+      top: 72px;
+    }
+    body.mobile-mode #debug {
+      font-size: 10px;
+      padding: 6px 8px;
+      top: auto;
+      bottom: max(8px, env(safe-area-inset-bottom, 0px));
+      left: 50%;
+      transform: translateX(-50%);
+      max-width: 90vw;
+      text-align: center;
+    }
+    body.mobile-mode #hud-right {
+      top: auto;
+      bottom: auto;
+      right: 8px;
+      top: max(70px, env(safe-area-inset-top, 0px) + 60px);
+      max-width: 150px;
+      font-size: 11px;
+    }
+    body.mobile-mode #username-badge,
+    body.mobile-mode #players {
+      padding: 6px 8px;
+      font-size: 11px;
+    }
+    body.mobile-mode #players { display: none; } /* save space; username badge is enough */
+
+    /* ---- Chat ---- */
+    #chat-panel {
+      position: fixed;
+      left: 10px;
+      bottom: 90px;
+      width: min(360px, calc(100vw - 20px));
+      z-index: 30;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-family: monospace;
+    }
+    #chat-log {
+      max-height: 180px;
+      overflow-y: auto;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: #fff;
+      font-size: 12px;
+      line-height: 1.4;
+      text-shadow: 1px 1px 2px #000;
+      pointer-events: none;
+    }
+    #chat-panel.open #chat-log {
+      background: rgba(0, 0, 0, 0.65);
+      pointer-events: auto;
+      max-height: 220px;
+    }
+    .chat-line { word-break: break-word; margin-bottom: 2px; }
+    .chat-line.system { color: #ffd866; font-style: italic; }
+    .chat-user { color: #7cfc00; font-weight: bold; }
+    #chat-input-row {
+      display: none;
+      pointer-events: auto;
+    }
+    #chat-panel.open #chat-input-row { display: flex; gap: 6px; }
+    #chat-input {
+      flex: 1;
+      background: rgba(0, 0, 0, 0.75);
+      border: 2px solid #555;
+      border-radius: 6px;
+      color: #fff;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 8px 10px;
+      outline: none;
+    }
+    #chat-input:focus { border-color: #7cfc00; }
+    #chat-send {
+      background: rgba(40, 120, 60, 0.85);
+      border: 2px solid #7cfc00;
+      color: #fff;
+      border-radius: 6px;
+      padding: 0 12px;
+      font-family: monospace;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #btn-chat {
+      display: none;
+      position: fixed;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 25;
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.5);
+      background: rgba(0,0,0,0.4);
+      color: #fff;
+      font-size: 20px;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    body.mobile-mode #btn-chat { display: flex; align-items: center; justify-content: center; }
+    body.mobile-mode #chat-panel {
+      bottom: auto;
+      top: max(80px, env(safe-area-inset-top, 0px) + 70px);
+      left: 8px;
+      width: min(280px, calc(100vw - 80px));
+    }
+    body.mobile-mode #chat-log { max-height: 100px; font-size: 11px; }
+
+    /* ---- Sign modal ---- */
+    #sign-modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(0, 0, 0, 0.55);
+      align-items: center;
+      justify-content: center;
+    }
+    #sign-modal.open { display: flex; }
+    #sign-modal .box {
+      background: #2a2118;
+      border: 3px solid #b8956a;
+      border-radius: 10px;
+      padding: 16px 18px;
+      width: min(360px, calc(100vw - 32px));
+      color: #f5e6c8;
+      font-family: monospace;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    }
+    #sign-modal h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      color: #ffd866;
+    }
+    #sign-input {
+      width: 100%;
+      min-height: 90px;
+      resize: vertical;
+      background: #1a140e;
+      border: 2px solid #6b5340;
+      border-radius: 6px;
+      color: #fff;
+      font-family: monospace;
+      font-size: 14px;
+      padding: 8px;
+      outline: none;
+    }
+    #sign-input:focus { border-color: #ffd866; }
+    #sign-modal .actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+    #sign-modal button {
+      font-family: monospace;
+      font-weight: bold;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 2px solid #555;
+      cursor: pointer;
+      background: #3a3028;
+      color: #fff;
+    }
+    #sign-ok { border-color: #7cfc00; background: #2a5a30; }
+    #sign-cancel { border-color: #c44; }
+
+    /* ---- Survival HUD ---- */
+    #vitals {
+      display: none;
+      position: fixed;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 15;
+      background: rgba(0,0,0,0.5);
+      padding: 8px 14px;
+      border-radius: 8px;
+      border: 2px solid #333;
+      font-family: monospace;
+      color: #fff;
+      text-shadow: 1px 1px 2px #000;
+      min-width: 220px;
+    }
+    body.survival-mode #vitals { display: block; }
+    body.survival-mode #block-preview { bottom: 160px; }
+    #vitals .row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 4px 0;
+      letter-spacing: 0;
+    }
+    #vitals .label {
+      width: 56px;
+      font-size: 11px;
+      opacity: 0.85;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    #vitals .icons {
+      flex: 1;
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: 2px;
+      line-height: 1;
+    }
+    /* Same box size for hearts and cheese so bars line up */
+    #vitals .icons .pip {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      font-size: 16px;
+      line-height: 18px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    #vitals .icons .pip.empty {
+      opacity: 0.35;
+      filter: grayscale(0.4);
+    }
+    #mode-badge {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 15;
+      background: rgba(0,0,0,0.5);
+      color: #ffd866;
+      font-family: monospace;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      border: 1px solid #555;
+      pointer-events: none;
+    }
+    #cheese-inv {
+      font-size: 12px;
+      margin-top: 4px;
+      opacity: 0.95;
+      text-align: center;
+    }
+
+    /* Game over */
+    #game-over {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(20, 0, 0, 0.78);
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      color: #fff;
+    }
+    #game-over.open { display: flex; }
+    #game-over .box {
+      text-align: center;
+      background: #1a0a0a;
+      border: 3px solid #c44;
+      border-radius: 12px;
+      padding: 28px 36px;
+      max-width: 90vw;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+    }
+    #game-over h2 {
+      color: #ff5555;
+      font-size: 28px;
+      margin: 0 0 10px;
+    }
+    #game-over p { margin: 8px 0 18px; opacity: 0.9; line-height: 1.5; }
+    #btn-respawn {
+      font-family: monospace;
+      font-weight: bold;
+      font-size: 16px;
+      padding: 12px 24px;
+      border-radius: 8px;
+      border: 2px solid #7cfc00;
+      background: #2a5a30;
+      color: #fff;
+      cursor: pointer;
+    }
+    #btn-respawn:hover { background: #3a7a40; }
+
+    /* ---- Pause / Escape menu ---- */
+    #pause-menu, #guidebook-panel, #craft-panel {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: rgba(0, 0, 0, 0.72);
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      color: #fff;
+    }
+    #pause-menu.open, #guidebook-panel.open, #craft-panel.open { display: flex; }
+    .menu-box {
+      background: #1a1f24;
+      border: 3px solid #555;
+      border-radius: 12px;
+      padding: 24px 28px;
+      min-width: min(320px, 92vw);
+      max-width: 92vw;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+      text-align: center;
+    }
+    .menu-box h2 {
+      margin: 0 0 16px;
+      color: #ffd866;
+      font-size: 22px;
+    }
+    .menu-btn {
+      display: block;
+      width: 100%;
+      margin: 8px 0;
+      padding: 12px 16px;
+      font-family: monospace;
+      font-weight: bold;
+      font-size: 15px;
+      border-radius: 8px;
+      border: 2px solid #666;
+      background: #2a323a;
+      color: #fff;
+      cursor: pointer;
+    }
+    .menu-btn:hover { border-color: #7cfc00; background: #334; }
+    .menu-btn.primary { border-color: #7cfc00; background: #2a5a30; }
+    .menu-btn.primary:hover { background: #3a7a40; }
+
+    #guidebook-panel .guide-layout,
+    #craft-panel .craft-layout {
+      display: flex;
+      gap: 12px;
+      text-align: left;
+      max-width: min(860px, 96vw);
+      max-height: min(80vh, 640px);
+      width: 96vw;
+    }
+    #guidebook-panel .guide-nav {
+      width: 180px;
+      flex-shrink: 0;
+      overflow-y: auto;
+      border-right: 1px solid #444;
+      padding-right: 8px;
+    }
+    #guidebook-panel .guide-nav button {
+      display: block;
+      width: 100%;
+      text-align: left;
+      margin: 4px 0;
+      padding: 8px 10px;
+      font-family: monospace;
+      font-size: 12px;
+      border: 1px solid #444;
+      border-radius: 6px;
+      background: #222;
+      color: #ddd;
+      cursor: pointer;
+    }
+    #guidebook-panel .guide-nav button.active,
+    #guidebook-panel .guide-nav button:hover {
+      border-color: #7cfc00;
+      color: #fff;
+      background: #2a4030;
+    }
+    #guidebook-panel .guide-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 8px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    #guidebook-panel .guide-body h3 { color: #ffd866; margin: 0 0 10px; }
+    #guidebook-panel .guide-body h4 { color: #aaf; margin: 12px 0 6px; }
+    #guidebook-panel .guide-body ul { margin: 6px 0 6px 18px; padding: 0; }
+    #guidebook-panel .guide-body code {
+      background: #111;
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: #7cfc00;
+    }
+    #craft-panel .craft-list { flex: 1; overflow-y: auto; }
+    #craft-panel .recipe {
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 12px;
+      margin: 8px 0;
+      background: #222;
+    }
+    #craft-panel .recipe h4 { margin: 0 0 6px; color: #ffd866; }
+    #craft-panel .recipe p { margin: 0 0 8px; font-size: 12px; opacity: 0.9; }
+    #craft-panel .recipe .meta { font-size: 11px; color: #aaa; margin-bottom: 8px; }
+    #craft-panel .recipe button {
+      font-family: monospace;
+      font-weight: bold;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 2px solid #7cfc00;
+      background: #2a5a30;
+      color: #fff;
+      cursor: pointer;
+    }
+    #craft-panel .recipe button:disabled {
+      opacity: 0.45;
+      border-color: #555;
+      background: #333;
+      cursor: not-allowed;
+    }
+    .panel-close-row { margin-top: 12px; text-align: center; }
+
+    /* Chest UI */
+    #chest-panel {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 85;
+      background: rgba(0,0,0,0.7);
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      color: #fff;
+    }
+    #chest-panel.open { display: flex; }
+    #chest-panel .menu-box {
+      max-width: min(480px, 96vw);
+      text-align: left;
+      max-height: 85vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #chest-panel h2 { text-align: center; color: #ffd866; margin: 0 0 8px; }
+    #chest-body { overflow-y: auto; flex: 1; }
+    .chest-meta { font-size: 12px; opacity: 0.9; margin: 0 0 8px; }
+    .chest-empty { opacity: 0.6; font-style: italic; padding: 12px; text-align: center; }
+    .chest-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      padding: 8px;
+      margin: 4px 0;
+      background: #222;
+      border: 1px solid #444;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .chest-item-name { flex: 1; min-width: 80px; color: #ffd866; }
+
+    /* Code Block editor */
+    #code-panel {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 88;
+      background: rgba(0,0,0,0.75);
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      color: #fff;
+    }
+    #code-panel.open { display: flex; }
+    #code-panel .menu-box {
+      max-width: min(720px, 96vw);
+      width: 100%;
+      text-align: left;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+    }
+    #code-panel h2 { text-align: center; color: #7dffb0; margin: 0 0 6px; }
+    #code-help {
+      font-size: 11px;
+      line-height: 1.4;
+      opacity: 0.9;
+      margin: 0 0 8px;
+      color: #b8f0c8;
+    }
+    #code-input {
+      width: 100%;
+      min-height: 280px;
+      flex: 1;
+      background: #0d1117;
+      color: #e6edf3;
+      border: 1px solid #3d5a45;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      resize: vertical;
+      box-sizing: border-box;
+    }
+    #code-panel .actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 10px;
+      flex-wrap: wrap;
+    }
+    #code-panel button {
+      font-family: monospace;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #333;
+      color: #fff;
+      cursor: pointer;
+    }
+    #code-panel button.primary {
+      background: #1a6b3c;
+      border-color: #3d9b60;
+    }
+
+    /* LED color picker */
+    #led-panel {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 88;
+      background: rgba(0,0,0,0.75);
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      color: #fff;
+    }
+    #led-panel.open { display: flex; }
+    #led-panel .menu-box {
+      max-width: min(360px, 96vw);
+      text-align: center;
+    }
+    #led-panel h2 { color: #ff6b6b; margin: 0 0 12px; }
+    #led-color {
+      width: 96px;
+      height: 96px;
+      border: 2px solid #fff;
+      border-radius: 8px;
+      padding: 0;
+      cursor: pointer;
+      background: none;
+    }
+    #led-panel .actions {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 14px;
+    }
+    #led-panel button {
+      font-family: monospace;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #333;
+      color: #fff;
+      cursor: pointer;
+    }
+    #led-panel button.primary {
+      background: #8b1a1a;
+      border-color: #c44;
+    }
+    .chest-item-count { color: #aaa; margin-right: 4px; }
+    .chest-row button, .chest-actions button {
+      font-family: monospace;
+      font-size: 11px;
+      padding: 5px 8px;
+      border-radius: 4px;
+      border: 1px solid #666;
+      background: #333;
+      color: #fff;
+      cursor: pointer;
+    }
+    .chest-row button:hover, .chest-actions button:hover {
+      border-color: #7cfc00;
+    }
+    .chest-actions {
+      display: flex;
+      gap: 8px;
+      margin: 10px 0;
+      flex-wrap: wrap;
+    }
+    .chest-actions button {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px;
+      border-color: #7cfc00;
+      background: #2a5a30;
+      font-weight: bold;
+    }
+    .chest-hint { font-size: 11px; opacity: 0.75; margin: 0; }
+
+    /* ---- Inventory (tabbed) ---- */
+    #inventory-panel {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      background: rgba(0, 0, 0, 0.55);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    #inventory-panel.open { display: flex; }
+    #inventory-panel .menu-box {
+      width: min(720px, 96vw);
+      max-height: min(90vh, 640px);
+      overflow: auto;
+      text-align: left;
+    }
+    .inv-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 8px 0 12px;
+    }
+    .inv-tab {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #1a1a1a;
+      color: #fff;
+      font-family: monospace;
+      cursor: pointer;
+    }
+    .inv-tab.active {
+      border-color: #7cfc00;
+      background: #2a4a20;
+    }
+    .inv-hotbar-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+      padding: 8px;
+      background: rgba(0,0,0,0.35);
+      border-radius: 8px;
+      border: 1px solid #333;
+    }
+    .inv-hot-slot {
+      width: 64px;
+      min-height: 56px;
+      padding: 4px;
+      border-radius: 6px;
+      border: 2px solid #555;
+      background: #222;
+      color: #fff;
+      font-family: monospace;
+      font-size: 10px;
+      cursor: pointer;
+      position: relative;
+      line-height: 1.15;
+    }
+    .inv-hot-slot.selected {
+      border-color: #fff;
+      background: #3a3a50;
+    }
+    .inv-slot-num {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      opacity: 0.6;
+      font-size: 9px;
+    }
+    .inv-slot-name { display: block; margin-top: 12px; text-align: center; }
+    .inv-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .inv-item {
+      padding: 10px 8px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #1e1e28;
+      color: #fff;
+      font-family: monospace;
+      font-size: 12px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .inv-item:hover { border-color: #7cfc00; }
+    .inv-item.in-hotbar { border-color: #6688aa; }
+    .inv-item-badge {
+      display: block;
+      font-size: 9px;
+      opacity: 0.7;
+      margin-top: 4px;
+    }
+    .inv-hint {
+      font-size: 11px;
+      opacity: 0.8;
+      margin: 0 0 10px;
+      line-height: 1.4;
+    }
+    .inv-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .inv-actions button {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: #2a2a2a;
+      color: #fff;
+      font-family: monospace;
+      cursor: pointer;
+    }
+    .inv-actions button.primary {
+      border-color: #7cfc00;
+      background: #2a5a30;
+      font-weight: bold;
+    }
+
+    /* Furnace */
+    #furnace-panel {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      background: rgba(0, 0, 0, 0.55);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    #furnace-panel.open { display: flex; }
+    #furnace-panel .menu-box {
+      width: min(520px, 96vw);
+      text-align: left;
+    }
+    .furnace-hint { font-size: 12px; opacity: 0.85; margin: 0 0 12px; line-height: 1.4; }
+    .furnace-grid {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+    .furnace-slot {
+      flex: 1;
+      min-width: 110px;
+      background: rgba(0,0,0,0.35);
+      border: 1px solid #555;
+      border-radius: 8px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+    .furnace-slot-label { font-size: 11px; opacity: 0.75; margin-bottom: 6px; }
+    .furnace-slot-item { font-size: 13px; font-weight: bold; min-height: 2.2em; }
+    .furnace-slot-sub { font-size: 10px; opacity: 0.7; margin-top: 4px; }
+    .furnace-arrow { align-self: center; font-size: 20px; opacity: 0.6; }
+    .furnace-progress {
+      height: 6px;
+      background: #222;
+      border-radius: 3px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .furnace-progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #e67e22, #f1c40f);
+      width: 0%;
+    }
+    .furnace-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .furnace-actions button {
+      flex: 1;
+      min-width: 120px;
+      padding: 10px 8px;
+      border-radius: 6px;
+      border: 1px solid #666;
+      background: #2a2a2a;
+      color: #fff;
+      font-family: monospace;
+      cursor: pointer;
+    }
+    .furnace-actions button:hover { border-color: #7cfc00; }
+
+    @media (max-height: 500px) and (orientation: landscape) {
+      #joystick-base { width: 100px; height: 100px; left: 16px; bottom: 12px; }
+      #joystick-knob { width: 44px; height: 44px; }
+      #btn-jump { width: 60px; height: 60px; right: 12px; bottom: 80px; }
+      #btn-break { width: 64px; height: 64px; right: 12px; bottom: 12px; }
+      #btn-place { width: 56px; height: 56px; right: 84px; bottom: 80px; }
+      #btn-sprint { width: 52px; height: 52px; right: 84px; bottom: 12px; }
+      #btn-prev-block, #btn-next-block { display: none; }
+      body.mobile-mode #hotbar { top: 4px; padding: 4px; }
+      body.mobile-mode .slot { width: 40px; min-width: 40px; height: 40px; font-size: 9px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="crosshair"></div>
+  <div id="mode-badge">Mode: CREATIVE</div>
+  <div id="hotbar"></div>
+  <div id="vitals">
+    <div class="row"><span class="label">Health</span><span class="icons" id="hearts"></span></div>
+    <div class="row"><span class="label">Hunger</span><span class="icons" id="hunger-cheese"></span></div>
+    <div id="cheese-inv">Cheese in bag: 0 · press <b>C</b> to eat (+3 hunger) · <b>E</b> inventory</div>
+  </div>
+  <div id="debug"></div>
+  <div id="block-preview"></div>
+  <div id="game-over">
+    <div class="box">
+      <h2>Game Over</h2>
+      <p id="game-over-reason">You died.</p>
+      <p>Inventory reset. The world is unchanged.</p>
+      <button type="button" id="btn-respawn">Respawn</button>
+    </div>
+  </div>
+  <div id="hud-right">
+    <div id="username-badge">You are <span id="username">…</span></div>
+    <div id="players">
+      <div class="title">Online</div>
+      <div class="player-row muted">Connecting…</div>
+    </div>
+  </div>
+  <div id="help">
+    Click to play · WASD move · Space jump · Shift sprint<br>
+    LMB mine · RMB place · <b>1–9 / 0</b> hotbar · <b>E</b> inventory<br>
+    <b>T</b> chat · <b>C</b> eat cheese · Mars Portal for other world
+  </div>
+
+  <!-- Tabbed inventory -->
+  <div id="inventory-panel" aria-hidden="true">
+    <div class="menu-box">
+      <h2 style="text-align:center;margin:0 0 6px;">Inventory</h2>
+      <p class="inv-hint">
+        Click a <b>hotbar slot</b> below, then click an item from a tab to assign it.
+        The bottom bar always has 10 quick-slots (defaults: common blocks).
+      </p>
+      <div class="inv-hotbar-preview" id="inv-hotbar-preview"></div>
+      <div class="inv-tabs" id="inv-tabs"></div>
+      <div class="inv-grid" id="inv-grid"></div>
+      <div class="inv-actions">
+        <button type="button" id="btn-inv-reset">Reset defaults</button>
+        <button type="button" class="primary" id="btn-inv-close">Close (E / Esc)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chat -->
+  <div id="chat-panel">
+    <div id="chat-log" aria-live="polite"></div>
+    <div id="chat-input-row">
+      <input id="chat-input" type="text" maxlength="200" placeholder="Message… (Enter to send, Esc to cancel)" autocomplete="off" />
+      <button type="button" id="chat-send">Send</button>
+    </div>
+  </div>
+  <button type="button" id="btn-chat" aria-label="Open chat" title="Chat">💬</button>
+
+  <!-- Sign text modal -->
+  <div id="sign-modal" role="dialog" aria-label="Edit sign">
+    <div class="box">
+      <h3>Edit Sign</h3>
+      <textarea id="sign-input" maxlength="120" placeholder="Write a message — long text wraps on the sign…"></textarea>
+      <div class="actions">
+        <button type="button" id="sign-cancel">Cancel</button>
+        <button type="button" id="sign-ok">Place</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause menu (Esc) -->
+  <div id="pause-menu" aria-hidden="true">
+    <div class="menu-box">
+      <h2>Paused</h2>
+      <button type="button" class="menu-btn primary" id="btn-resume">Return to game</button>
+      <button type="button" class="menu-btn" id="btn-guidebook">Guidebook</button>
+      <button type="button" class="menu-btn" id="btn-craft">Craft</button>
+      <button type="button" class="menu-btn" id="btn-menu-save">Save</button>
+    </div>
+  </div>
+
+  <!-- Guidebook encyclopedia -->
+  <div id="guidebook-panel" aria-hidden="true">
+    <div class="menu-box" style="text-align:left; max-width:min(900px,96vw);">
+      <h2 style="text-align:center;">Guidebook</h2>
+      <div class="guide-layout">
+        <nav class="guide-nav" id="guide-nav"></nav>
+        <div class="guide-body" id="guide-body"></div>
+      </div>
+      <div class="panel-close-row">
+        <button type="button" class="menu-btn" id="btn-guide-back" style="display:inline-block;width:auto;min-width:160px;">Back to menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Crafting -->
+  <div id="craft-panel" aria-hidden="true">
+    <div class="menu-box" style="text-align:left; max-width:min(520px,96vw);">
+      <h2 style="text-align:center;">Crafting</h2>
+      <div class="craft-list" id="craft-list"></div>
+      <div class="panel-close-row">
+        <button type="button" class="menu-btn" id="btn-craft-back" style="display:inline-block;width:auto;min-width:160px;">Back to menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chest inventory -->
+  <div id="chest-panel" aria-hidden="true">
+    <div class="menu-box">
+      <h2>Chest</h2>
+      <div id="chest-body"></div>
+      <div class="panel-close-row">
+        <button type="button" class="menu-btn primary" id="btn-chest-close" style="display:inline-block;width:auto;min-width:160px;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Furnace -->
+  <div id="furnace-panel" aria-hidden="true">
+    <div class="menu-box">
+      <h2 style="text-align:center;">Furnace</h2>
+      <div id="furnace-body"></div>
+      <div class="panel-close-row">
+        <button type="button" class="menu-btn primary" id="btn-furnace-close" style="display:inline-block;width:auto;min-width:160px;">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Code Block Python editor -->
+  <div id="code-panel" aria-hidden="true">
+    <div class="menu-box">
+      <h2>Code Block</h2>
+      <p id="code-help">
+        Faces: <b>+x -x +y -y +z -z</b> (east/west/up/down/south/north).<br/>
+        <code>activate(face)</code> · <code>deactivate(face)</code> · <code>get_face(face)</code> ·
+        <code>read_neighbor(face)</code> · <code>time.sleep(s)</code> · <code>print(...)</code><br/>
+        Scripts run on the server while any player is online. Touch an LED with an activated face to light it.
+      </p>
+      <textarea id="code-input" spellcheck="false" autocomplete="off"></textarea>
+      <div class="actions">
+        <button type="button" id="btn-code-cancel">Cancel</button>
+        <button type="button" class="primary" id="btn-code-save">Save &amp; Run</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LED color picker -->
+  <div id="led-panel" aria-hidden="true">
+    <div class="menu-box">
+      <h2>LED Block</h2>
+      <p style="font-size:12px;opacity:0.9;margin:0 0 10px;">Pick a color (default red). Lights when a Code Block face touching it is active.</p>
+      <input type="color" id="led-color" value="#ff0000" aria-label="LED color" />
+      <div class="actions">
+        <button type="button" id="btn-led-cancel">Cancel</button>
+        <button type="button" class="primary" id="btn-led-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile / touch on-screen controls (shown automatically on phones & tablets) -->
+  <div id="mobile-controls" aria-hidden="true">
+    <div class="mobile-hint">Drag to look</div>
+    <div id="joystick-zone" aria-label="Movement joystick">
+      <div id="joystick-base">
+        <div id="joystick-knob"></div>
+      </div>
+    </div>
+    <div id="action-pad">
+      <button type="button" class="mobile-btn" id="btn-prev-block" aria-label="Previous block">
+        <span class="icon">◀</span>
+      </button>
+      <button type="button" class="mobile-btn" id="btn-next-block" aria-label="Next block">
+        <span class="icon">▶</span>
+      </button>
+      <button type="button" class="mobile-btn" id="btn-place" aria-label="Place block">
+        <span class="icon">▣</span>
+        <span class="label">Place</span>
+      </button>
+      <button type="button" class="mobile-btn" id="btn-jump" aria-label="Jump">
+        <span class="icon">⬆</span>
+        <span class="label">Jump</span>
+      </button>
+      <button type="button" class="mobile-btn" id="btn-sprint" aria-label="Sprint">
+        <span class="icon">≫</span>
+        <span class="label">Sprint</span>
+      </button>
+      <button type="button" class="mobile-btn" id="btn-break" aria-label="Break block">
+        <span class="icon">⛏</span>
+        <span class="label">Mine</span>
+      </button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

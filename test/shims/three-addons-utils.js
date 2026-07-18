@@ -1,0 +1,1 @@
+export const mergeGeometries = (geos) => geos[0] || null;
