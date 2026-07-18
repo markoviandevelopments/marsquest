@@ -1419,23 +1419,32 @@ export class World {
   }
 
   /**
-   * Occasionally decay orphan oak leaves far from logs.
-   * Samples a limited number of leaf blocks near the player each call.
+   * Decay orphan oak leaves that are more than 4 blocks (Chebyshev distance)
+   * from any oak log. Scans a deterministic box around the player each call so
+   * orphaned leaves are reliably found and removed (no random sampling gaps).
+   * A per-tick cap avoids frame spikes when a whole tree's logs are removed at
+   * once. Returns the number of leaves removed.
    */
-  tickLeafDecay(playerX, playerZ, samples = 40) {
+  tickLeafDecay(playerX, playerZ, radius = 24, maxPerTick = 24) {
     let decayed = 0;
     const baseX = Math.floor(playerX);
     const baseZ = Math.floor(playerZ);
-    for (let i = 0; i < samples; i++) {
-      const wx = baseX + Math.floor((Math.random() - 0.5) * 48);
-      const wz = baseZ + Math.floor((Math.random() - 0.5) * 48);
-      if (!this.inBounds(wx, wz)) continue;
-      const wy = Math.floor(Math.random() * Math.min(EARTH_Y_MAX, 48));
-      if (this.getBlock(wx, wy, wz) !== BlockTypes.LEAVES.id) continue;
-      if (this.hasLogNearby(wx, wy, wz, 4)) continue;
-      if (Math.random() < 0.18) {
-        this.setBlock(wx, wy, wz, 'AIR');
-        decayed++;
+    const r = Math.max(1, radius | 0);
+    // Scan every column in a (2r+1)² box centered on the player, checking the
+    // leaf-bearing band of the world (leaves only generate near the surface).
+    for (let wx = baseX - r; wx <= baseX + r && decayed < maxPerTick; wx++) {
+      if (wx < WORLD_MIN || wx >= WORLD_MAX) continue;
+      for (let wz = baseZ - r; wz <= baseZ + r && decayed < maxPerTick; wz++) {
+        if (wz < WORLD_MIN || wz >= WORLD_MAX) continue;
+        // Leaves only exist in a shallow band above the surface; scanning the
+        // full column is wasteful, so bound Y to the realistic leaf range.
+        const yTop = Math.min(EARTH_Y_MAX, 48);
+        for (let wy = 1; wy < yTop && decayed < maxPerTick; wy++) {
+          if (this.getBlock(wx, wy, wz) !== BlockTypes.LEAVES.id) continue;
+          if (this.hasLogNearby(wx, wy, wz, 4)) continue;
+          this.setBlock(wx, wy, wz, 'AIR');
+          decayed++;
+        }
       }
     }
     return decayed;
@@ -1837,9 +1846,11 @@ export class World {
     return this._isMineableType(getBlockType(this.getBlock(x, y, z)));
   }
 
-  canBreak(wx, wy, wz) {
+  canBreak(wx, wy, wz, allowCreative = false) {
     const id = this.getBlock(wx, wy, wz);
-    return this._isMineableType(getBlockType(id));
+    const type = getBlockType(id);
+    if (id === BlockTypes.BEDROCK.id) return allowCreative; // bedrock only in creative
+    return this._isMineableType(type);
   }
 
   markChunkDirty(cx, cz) {

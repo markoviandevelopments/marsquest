@@ -7,6 +7,7 @@ const JUMP_SPEED = 9;        // initial upward velocity
 const SWIM_UP_SPEED = 6.2;   // vertical boost while holding jump in water
 const SWIM_MAX_UP = 7.5;
 const WALK_SPEED = 5;        // blocks per second
+const FLY_SPEED = 9;         // vertical speed while flying
 const SWIM_SPEED_MULT = 0.72;
 const SPRINT_MULT = 1.6;     // sprint multiplier
 const PLAYER_HEIGHT = 1.8;   // eye height
@@ -96,6 +97,7 @@ export class Player {
 
   update(dt, keys) {
     this.inWater = this.checkInWater();
+    const flying = !!keys.fly;
 
     // Build movement direction from camera yaw
     const forward = new THREE.Vector3();
@@ -128,7 +130,11 @@ export class Player {
 
     // Jump / swim (sticky plants also shorten jumps)
     if (keys.jump) {
-      if (this.inWater) {
+      if (flying) {
+        // Ascend while holding jump in flight
+        this.velocity.y = FLY_SPEED;
+        this.onGround = false;
+      } else if (this.inWater) {
         // Hold space to swim up continuously (not only when "on ground")
         this.velocity.y = Math.min(SWIM_MAX_UP, Math.max(this.velocity.y, SWIM_UP_SPEED));
         this.onGround = false;
@@ -140,7 +146,15 @@ export class Player {
     }
 
     // Gravity (reduced in water + light buoyancy)
-    if (this.inWater) {
+    if (flying) {
+      // Free vertical flight: descend with Shift, otherwise hover (no gravity)
+      if (keys.down) {
+        this.velocity.y = -FLY_SPEED;
+      } else if (!keys.jump) {
+        this.velocity.y = 0;
+      }
+      // No terminal velocity clamp needed; speed is fixed
+    } else if (this.inWater) {
       this.velocity.y -= GRAVITY * 0.18 * dt;
       this.velocity.y += 3.5 * dt; // buoyancy
       // Cap sink / rise speeds underwater

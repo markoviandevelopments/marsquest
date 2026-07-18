@@ -24,6 +24,7 @@ import { GameMode, MODE_CREATIVE, MODE_SURVIVAL, MAX_HEALTH, MAX_HUNGER, dropNam
 import { ChickenWorld } from './chickens.js';
 import { MarsMobWorld } from './marsMobs.js';
 import { FishWorld } from './fish.js';
+import { BirdWorld } from './birds.js';
 import {
   getFurnace,
   tickAllFurnaces,
@@ -170,6 +171,7 @@ const toadWorld = new ToadWorld(scene, world);
 const chickenWorld = new ChickenWorld(scene, world);
 const marsMobs = new MarsMobWorld(scene, world);
 const fishWorld = new FishWorld(scene, world);
+const birdWorld = new BirdWorld(scene, world);
 const dayNight = new DayNightCycle({ scene, ambient: ambientLight, sun: sunLight, fog });
 const gameMode = new GameMode();
 const network = new Network();
@@ -255,7 +257,8 @@ function renderPips(container, filled, total, fullChar, emptyChar) {
 
 function refreshVitalsUI() {
   if (modeBadgeEl) {
-    modeBadgeEl.textContent = `Mode: ${gameMode.mode.toUpperCase()}`;
+    const flyTag = gameMode.isFlying() ? ' · FLYING' : '';
+    modeBadgeEl.textContent = `Mode: ${gameMode.mode.toUpperCase()}${flyTag}`;
   }
   document.body.classList.toggle('survival-mode', gameMode.isSurvival() && !gameMode.dead);
   const h = gameMode.isSurvival() ? gameMode.health : MAX_HEALTH;
@@ -753,7 +756,7 @@ document.getElementById('btn-led-save')?.addEventListener('click', () => {
 });
 
 // Input state
-const keys = { forward: false, backward: false, left: false, right: false, jump: false, sprint: false };
+const keys = { forward: false, backward: false, left: false, right: false, jump: false, sprint: false, down: false, fly: false };
 const mouse = { break: false, place: false };
 let uiBlocking = false; // chat / sign modal open — pause dig & look lock
 
@@ -1410,6 +1413,18 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
+  // F toggles creative flight (creative mode only)
+  if (e.code === 'KeyF' && !e.ctrlKey && !e.metaKey && !gameMode.dead) {
+    e.preventDefault();
+    if (gameMode.isCreative()) {
+      const on = gameMode.toggleFlying();
+      chat.system(on ? 'Flying enabled — Space to rise, Shift to descend' : 'Flying disabled');
+    } else {
+      chat.system('Flight is a creative-mode feature (/creative)');
+    }
+    return;
+  }
+
   // On mobile, hardware keyboards (rare) still work
   switch (e.code) {
     case 'KeyW': keys.forward = true; break;
@@ -1590,7 +1605,7 @@ function updateCarnivoreSticky(dt) {
 function breakBlock(target) {
   if (!target) return false;
   if (gameMode.dead) return false;
-  if (!world.canBreak(target.x, target.y, target.z)) return false;
+  if (!world.canBreak(target.x, target.y, target.z, gameMode.isCreative())) return false;
 
   // Carnivorous flowers: only if close and not currently stuck inside one
   const targetType = target.blockType || world.getBlockType(target.blockId);
@@ -2261,6 +2276,8 @@ function animate(time) {
 
   accumulator += delta;
   while (accumulator >= fixedTimeStep) {
+    keys.fly = gameMode.isFlying();
+    keys.down = keys.sprint; // Shift descends while flying
     player.update(fixedTimeStep, keys);
     accumulator -= fixedTimeStep;
   }
@@ -2281,6 +2298,8 @@ function animate(time) {
     chickenWorld.update(delta);
     fishWorld.update(delta);
     fishWorld.setVisible(true);
+    birdWorld.update(delta);
+    birdWorld.setVisible(true);
     marsMobs.setVisible(false);
   } else {
     marsMobs.update(delta);
@@ -2314,7 +2333,7 @@ function animate(time) {
   leafDecayTimer += delta;
   if (leafDecayTimer >= 1.25 && isOnEarth(ppos.y)) {
     leafDecayTimer = 0;
-    const n = world.tickLeafDecay(ppos.x, ppos.z, 48);
+    const n = world.tickLeafDecay(ppos.x, ppos.z, 24);
     if (n > 0) world.updateChunks(ppos.x, ppos.z);
   }
 
@@ -2441,7 +2460,7 @@ function animate(time) {
   const fishStats = fishWorld.stats();
   const faunaLine = onMars
     ? `Rovers: ${marsStats.rovers} · Hoppers: ${marsStats.hoppers} · Crawlers: ${marsStats.crawlers}`
-    : `Toads: ${critters.toads} · Food: ${critters.food} · Chickens: ${chickenWorld.count()} · Fish: ${fishStats.total} (♂${fishStats.males}/♀${fishStats.females})`;
+    : `Toads: ${critters.toads} · Food: ${critters.food} · Chickens: ${chickenWorld.count()} · Fish: ${fishStats.total} (♂${fishStats.males}/♀${fishStats.females}) · Birds: ${birdWorld.count()}`;
   debugEl.innerHTML = `
     XYZ: ${pos.x.toFixed(2)} / ${pos.y.toFixed(2)} / ${pos.z.toFixed(2)}<br>
     Angle: ${face.deg.toFixed(1)}°<br>
@@ -2482,6 +2501,7 @@ setTimeout(() => {
   marsMobs.ensureSpawned();
   marsMobs.setVisible(false);
   fishWorld.ensureSpawned();
+  birdWorld.ensureSpawned();
 }, 1500);
 
 // Save on leave
@@ -2496,6 +2516,7 @@ if (helpEl && !mobileMode) {
   helpEl.innerHTML =
     'Click to play · WASD move · Space jump/swim · Shift sprint<br>' +
     'LMB mine · RMB place · <b>1–9/0</b> hotbar · <b>E</b> inventory · <b>C</b> food<br>' +
-    '<b>Esc</b> menu · Hold Space in water to swim up · <b>Y</b> yell';
+    '<b>Esc</b> menu · Hold Space in water to swim up · <b>Y</b> yell<br>' +
+    '<b>F</b> toggle fly mode';
 }
 animate(performance.now());

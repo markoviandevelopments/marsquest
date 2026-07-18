@@ -29,10 +29,24 @@ export class GameMode {
     this.onGameOver = null;
     this.onChange = null;
     this.dead = false;
+    /** Creative-only flight toggle */
+    this.flying = false;
   }
 
   isCreative() {
     return this.mode === MODE_CREATIVE;
+  }
+
+  /** Toggle creative flight. Only meaningful in creative mode. */
+  toggleFlying() {
+    if (!this.isCreative()) return false;
+    this.flying = !this.flying;
+    this.notify();
+    return this.flying;
+  }
+
+  isFlying() {
+    return this.isCreative() && this.flying;
   }
 
   isSurvival() {
@@ -50,6 +64,7 @@ export class GameMode {
       this.hunger = MAX_HUNGER;
       this.hungerTimer = 0;
       this.dead = false;
+      this.flying = false;
       this.inventory.clear(); // start with nothing
       this.notify();
       return 'Survival mode — mine blocks, watch health & hunger. Chickens drop cheese (E to eat).';
@@ -59,8 +74,9 @@ export class GameMode {
       this.dead = false;
       this.health = MAX_HEALTH;
       this.hunger = MAX_HUNGER;
+      this.flying = false;
       this.notify();
-      return 'Creative mode — unlimited blocks, no health/hunger.';
+      return 'Creative mode — unlimited blocks, no health/hunger. Press F to fly.';
     }
     return 'Unknown mode';
   }
@@ -270,12 +286,14 @@ export class GameMode {
       hungerTimer: this.hungerTimer,
       inventory: Object.fromEntries(this.inventory),
       dead: this.dead,
+      flying: this.flying,
     };
   }
 
   loadState(data) {
     if (!data) return;
     if (data.mode === MODE_SURVIVAL || data.mode === MODE_CREATIVE) this.mode = data.mode;
+    this.flying = !!(data.flying && this.isCreative());
     if (typeof data.health === 'number') this.health = data.health;
     if (typeof data.hunger === 'number') this.hunger = data.hunger;
     if (typeof data.hungerTimer === 'number') this.hungerTimer = data.hungerTimer;
